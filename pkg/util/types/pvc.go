@@ -89,3 +89,15 @@ func IsPreallocated(annotations map[string]string) bool {
 	}
 	return false
 }
+
+func IsMigratedPVC(client kubecli.KubevirtClient, namespace string, claimName string) bool {
+	pvc, err = client.CoreV1().PersistentVolumeClaims(namespace).Get(context.Background(), claimName, v1.GetOptions{})
+	if err == nil {
+		for a, value := range annotations {
+			if a == "kubevirt.io/storage.migration" && value == "true" {
+				return true
+			}
+		}
+	}
+	return false
+}

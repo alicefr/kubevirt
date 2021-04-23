@@ -67,6 +67,9 @@ func ReplacePVCByHostDisk(vmi *v1.VirtualMachineInstance, clientset kubecli.Kube
 				log.Log.V(4).Infof("this volume %s is mapped as a filesystem passthrough, will not be replaced by HostDisk", volume.Name)
 				continue
 			}
+			if IsMigratedPVC(clientset, vmi.Namespace, volumeSource.PersistentVolumeClaim.ClaimName) {
+				continue
+			}
 
 			pvc, exists, isBlockVolumePVC, err := types.IsPVCBlockFromClient(clientset, vmi.Namespace, volumeSource.PersistentVolumeClaim.ClaimName)
 			if err != nil {

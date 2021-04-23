@@ -35,11 +35,13 @@ import (
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/tools/record"
 	"k8s.io/client-go/util/workqueue"
+	util "kubevirt.io/kubevirt/pkg/util/types"
 
 	"kubevirt.io/kubevirt/pkg/util/status"
 
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 
+	corev1 "k8s.io/api/core/v1"
 	"kubevirt.io/kubevirt/pkg/util/migrations"
 
 	virtv1 "kubevirt.io/client-go/api/v1"
@@ -388,6 +390,59 @@ func (c *MigrationController) updateStatus(migration *virtv1.VirtualMachineInsta
 	return nil
 }
 
+func (c *MigrationController) createTargetPVCs(vmi *virtv1.VirtualMachineInstance, pod *corev1.Pod) error {
+	var migratedVolumes []*corev1.PersistentVolumeClaim
+	for _, v := range vmi.Spec.Volumes {
+		// Create a migrated volumes only for PVCs
+		if v.VolumeSource.PersistentVolumeClaim == nil {
+			continue
+		}
+		sourcePVC, err := c.clientset.CoreV1().PersistentVolumeClaims(vmi.GetNamespace()).Get(context.Background(), v.VolumeSource.PersistentVolumeClaim.ClaimName, v1.GetOptions{})
+		if err != nil {
+			c.recorder.Eventf(vmi, k8sv1.EventTypeWarning, FailedCreatingMigratedPVC, "Error creating migrated pvc: %v", err)
+			return fmt.Errorf("failed to get migration source pvc: %v", err)
+		}
+		// Create new volumes only for not shared PVC
+		if util.IsPVCShared(sourcePVC) {
+			continue
+		}
+		pvc := &corev1.PersistentVolumeClaim{}
+		pvc.ObjectMeta.Name = sourcePVC.ObjectMeta.Name + "-migrated"
+		pvc.ObjectMeta.Namespace = sourcePVC.ObjectMeta.Namespace
+		pvc.ObjectMeta.Annotations = make(map[string]string)
+		for index, element := range sourcePVC.ObjectMeta.Annotations {
+			pvc.ObjectMeta.Annotations[index] = element
+		}
+		// Annotate that is a migrated disk
+		pvc.ObjectMeta.Annotations["kubevirt.io/storage.migration"] = "true"
+		sourcePVC.Spec.DeepCopyInto(&pvc.Spec)
+		// Zero the reference to the PersistentVolume backing this claim
+		pvc.Spec.VolumeName = ""
+		migratedVolumes = append(migratedVolumes, pvc)
+		log.Log.V(4).Infof("XXX Create target pvc %v", pvc.Name)
+		_, err = c.clientset.CoreV1().PersistentVolumeClaims(vmi.GetNamespace()).Create(context.Background(), pvc, v1.CreateOptions{})
+		if err != nil {
+			c.recorder.Eventf(vmi, k8sv1.EventTypeWarning, FailedCreatingMigratedPVC, "Error creating migrated pvc: %v", err)
+			return fmt.Errorf("failed to create vmi migration target pvc: %v", err)
+		}
+		targetVolume := corev1.Volume{
+			Name: v.Name,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: pvc.ObjectMeta.Name,
+				},
+			},
+		}
+		for i, t := range pod.Spec.Volumes {
+			if t.Name == v.Name {
+				pod.Spec.Volumes[i] = targetVolume
+				break
+			}
+		}
+	}
+	return nil
+}
+
 func (c *MigrationController) createTargetPod(migration *virtv1.VirtualMachineInstanceMigration, vmi *virtv1.VirtualMachineInstance) error {
 
 	templatePod, err := c.templateService.RenderLaunchManifest(vmi)
@@ -422,6 +477,7 @@ func (c *MigrationController) createTargetPod(migration *virtv1.VirtualMachineIn
 
 	// TODO libvirt requires unique host names for each target and source
 	templatePod.Spec.Hostname = ""
+	c.createTargetPVCs(vmi, templatePod)
 
 	key := controller.MigrationKey(migration)
 	c.podExpectations.ExpectCreations(key, 1)

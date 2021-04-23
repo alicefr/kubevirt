@@ -198,14 +198,14 @@ func classifyVolumesForMigration(vmi *v1.VirtualMachineInstance) *migrationDisks
 	// to make sure that these are being copied during migration.
 	// Persistent volume claims without ReadWriteMany access mode
 	// should be filtered out earlier in the process
-
+	// TODO: afrosi find a way to distinguish if the PVC is RWX or RWO
 	disks := &migrationDisks{
 		shared:    make(map[string]bool),
 		generated: make(map[string]bool),
 	}
 	for _, volume := range vmi.Spec.Volumes {
 		volSrc := volume.VolumeSource
-		if volSrc.PersistentVolumeClaim != nil || volSrc.DataVolume != nil ||
+		if volSrc.DataVolume != nil ||
 			(volSrc.HostDisk != nil && *volSrc.HostDisk.Shared) {
 			disks.shared[volume.Name] = true
 		}

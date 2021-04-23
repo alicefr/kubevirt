@@ -108,6 +108,8 @@ const (
 	PVCNotReadyReason = "PVCNotReady"
 	// FailedHotplugSyncReason is set when a hotplug specific failure occurs during sync
 	FailedHotplugSyncReason = "FailedHotplugSync"
+	// FailedCreatingMigratedPVC is set when the migrated PVC was not succesfully created
+	FailedCreatingMigratedPVC = "FailedCreatingMigratedPVC"
 )
 
 const failedToRenderLaunchManifestErrFormat = "failed to render launch manifest: %v"

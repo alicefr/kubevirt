@@ -37,7 +37,7 @@ import (
 	"github.com/opencontainers/runc/libcontainer/cgroups"
 
 	k8sv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	//"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
@@ -2159,22 +2159,9 @@ func (d *VirtualMachineController) checkVolumesForMigration(vmi *v1.VirtualMachi
 	for _, volume := range vmi.Spec.Volumes {
 		volSrc := volume.VolumeSource
 		if volSrc.PersistentVolumeClaim != nil || volSrc.DataVolume != nil {
-			var volName string
-			if volSrc.PersistentVolumeClaim != nil {
-				volName = volSrc.PersistentVolumeClaim.ClaimName
-			} else {
-				volName = volSrc.DataVolume.Name
-			}
-			_, shared, err := pvcutils.IsSharedPVCFromClient(d.clientset, vmi.Namespace, volName)
-			if errors.IsNotFound(err) {
-				return blockMigrate, fmt.Errorf("persistentvolumeclaim %v not found", volName)
-			} else if err != nil {
-				return blockMigrate, err
-			}
-			if !shared {
-				return true, fmt.Errorf("cannot migrate VMI: PVC %v is not shared, live migration requires that all PVCs must be shared (using ReadWriteMany access mode)", volName)
-			}
-		} else if volSrc.HostDisk != nil {
+			continue
+		}
+		if volSrc.HostDisk != nil {
 			shared := volSrc.HostDisk.Shared != nil && *volSrc.HostDisk.Shared
 			if !shared {
 				return true, fmt.Errorf("cannot migrate VMI with non-shared HostDisk")
@@ -2345,6 +2332,8 @@ func (d *VirtualMachineController) vmUpdateHelperMigrationTarget(origVMI *v1.Vir
 	if err != nil {
 		return err
 	}
+
+	// Create empty disk for filesystem base migreated PVC
 
 	// give containerDisks some time to become ready before throwing errors on retries
 	info := d.getLauncherClinetInfo(vmi)
