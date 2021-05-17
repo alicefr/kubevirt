@@ -488,6 +488,14 @@ http_archive(
     ],
 )
 
+http_file(
+    name = "libguestfs-appliance",
+    sha256 = "1be29201b2622078c90b0f2044d95da23f8f456cd0ed4421cca9b16266962479",
+    urls = [
+        "https://storage.googleapis.com/kubevirt-prow/devel/release/kubevirt/libguestfs-appliance/appliance-1.44.0-linux-5.11.22-100-fedora32.tar.xz",
+    ],
+)
+
 # Get container-disk-v1alpha RPM's
 http_file(
     name = "qemu-img",
