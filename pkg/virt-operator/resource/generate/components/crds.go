@@ -52,6 +52,7 @@ var (
 	KUBEVIRT                         = "kubevirts." + virtv1.KubeVirtGroupVersionKind.Group
 	VIRTUALMACHINESNAPSHOT           = "virtualmachinesnapshots." + snapshotv1.SchemeGroupVersion.Group
 	VIRTUALMACHINESNAPSHOTCONTENT    = "virtualmachinesnapshotcontents." + snapshotv1.SchemeGroupVersion.Group
+	LIBGUESTFS                       = "gsconfigs." + virtv1.KubeVirtGroupVersionKind.Group
 	PreserveUnknownFieldsFalse       = false
 )
 
@@ -965,4 +966,78 @@ func NewKubeVirtPriorityClassCR() *schedulingv1.PriorityClass {
 		GlobalDefault: false,
 		Description:   "This priority class should be used for KubeVirt core components only.",
 	}
+}
+
+// Used by manifest generation
+func NewGuestfsImageConfigCR(registry, tag string, imagePullPolicy corev1.PullPolicy) *virtv1.GuestfsImageConfig {
+	return &virtv1.GuestfsImageConfig{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: virtv1.GroupVersion.String(),
+			Kind:       "GuestfsImageConfig",
+		},
+		ObjectMeta: metav1.ObjectMeta{
+			Name: "config",
+		},
+		Spec: virtv1.GuestfsImageConfigSpec{
+			ImageRegistry:   registry,
+			ImagePullPolicy: imagePullPolicy,
+			ImageTag:        tag,
+		},
+	}
+}
+
+// Used by manifest generation
+// If you change something here, you probably need to change the CSV manifest too,
+// see /manifests/release/kubevirt.VERSION.csv.yaml.in
+func NewGuestfsImageConfigCrd() (*extv1.CustomResourceDefinition, error) {
+
+	crd := &extv1.CustomResourceDefinition{
+		TypeMeta: metav1.TypeMeta{
+			APIVersion: "apiextensions.k8s.io/v1",
+			Kind:       "CustomResourceDefinition",
+		},
+	}
+
+	crd.ObjectMeta.Name = LIBGUESTFS
+	crd.Spec = extv1.CustomResourceDefinitionSpec{
+		Group:    virtv1.GuestfsGroupVersionKind.Group,
+		Versions: newCRDVersions(),
+		Scope:    "Cluster",
+
+		Names: extv1.CustomResourceDefinitionNames{
+			Plural:     "gsconfigs",
+			Singular:   "gsconfig",
+			Kind:       "GuestfsImageConfig",
+			ShortNames: []string{"gsconfig"},
+			Categories: []string{
+				"all",
+			},
+		},
+	}
+	err := addFieldsToAllVersions(crd,
+		&extv1.CustomResourceValidation{
+			OpenAPIV3Schema: &extv1.JSONSchemaProps{
+				Type: "object",
+				Properties: map[string]extv1.JSONSchemaProps{
+					"spec": {
+						Type: "object",
+						Properties: map[string]extv1.JSONSchemaProps{
+							"imageRegistry":   {Type: "string", Description: "The image registry to pull the container images from."},
+							"imageTag":        {Type: "string", Description: "The image tag to use for the continer images installed."},
+							"imagePullPolicy": {Type: "string", Description: "PullPolicy describes a policy for if/when to pull a container image."},
+						},
+						Required: []string{"imageRegistry", "imageTag", "imagePullPolicy"},
+					},
+				},
+			},
+		})
+	if err != nil {
+		return nil, err
+	}
+
+	if err := patchValidationForAllVersions(crd); err != nil {
+		return nil, err
+	}
+
+	return crd, nil
 }

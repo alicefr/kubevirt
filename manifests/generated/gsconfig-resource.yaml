@@ -1,0 +1,65 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  name: gsconfigs.kubevirt.io
+spec:
+  group: kubevirt.io
+  names:
+    categories:
+    - all
+    kind: GuestfsImageConfig
+    plural: gsconfigs
+    shortNames:
+    - gsconfig
+    singular: gsconfig
+  scope: Cluster
+  versions:
+  - name: v1
+    schema:
+      openAPIV3Schema:
+        properties:
+          spec:
+            properties:
+              imagePullPolicy:
+                description: PullPolicy describes a policy for if/when to pull a container
+                  image.
+                type: string
+              imageRegistry:
+                description: The image registry to pull the container images from.
+                type: string
+              imageTag:
+                description: The image tag to use for the continer images installed.
+                type: string
+            required:
+            - imageRegistry
+            - imageTag
+            - imagePullPolicy
+            type: object
+        type: object
+    served: true
+    storage: false
+  - name: v1alpha3
+    schema:
+      openAPIV3Schema:
+        properties:
+          spec:
+            properties:
+              imagePullPolicy:
+                description: PullPolicy describes a policy for if/when to pull a container
+                  image.
+                type: string
+              imageRegistry:
+                description: The image registry to pull the container images from.
+                type: string
+              imageTag:
+                description: The image tag to use for the continer images installed.
+                type: string
+            required:
+            - imageRegistry
+            - imageTag
+            - imagePullPolicy
+            type: object
+        type: object
+    served: true
+    storage: true

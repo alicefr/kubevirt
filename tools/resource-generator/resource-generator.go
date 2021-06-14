@@ -32,10 +32,12 @@ import (
 )
 
 func main() {
-	resourceType := flag.String("type", "", "Type of resource to generate. kv | kv-cr | operator-rbac | priorityclass")
+	resourceType := flag.String("type", "", "Type of resource to generate. kv | kv-cr | operator-rbac | priorityclass | gsconfig | gsconfig-cr | gsconfig-rbac")
 	namespace := flag.String("namespace", "kube-system", "Namespace to use.")
 	pullPolicy := flag.String("pullPolicy", "IfNotPresent", "ImagePullPolicy to use.")
 	featureGates := flag.String("featureGates", "", "Feature gates to enable.")
+	registry := flag.String("registry", "", "Registr to use.")
+	tag := flag.String("tag", "", "Tag to use.")
 
 	flag.Parse()
 
@@ -58,6 +60,20 @@ func main() {
 	case "priorityclass":
 		priorityClass := components.NewKubeVirtPriorityClassCR()
 		util.MarshallObject(priorityClass, os.Stdout)
+	case "gsconfig":
+		gs, err := components.NewGuestfsImageConfigCrd()
+		if err != nil {
+			panic(fmt.Errorf("This should not happen, %v", err))
+		}
+		util.MarshallObject(gs, os.Stdout)
+	case "gsconfig-cr":
+		gsconfig := components.NewGuestfsImageConfigCR(*registry, *tag, imagePullPolicy)
+		util.MarshallObject(gsconfig, os.Stdout)
+	case "gsconfig-rbac":
+		all := rbac.GetAllGuestfsImageConfigClusterRole()
+		for _, r := range all {
+			util.MarshallObject(r, os.Stdout)
+		}
 	default:
 		panic(fmt.Errorf("unknown resource type %s", *resourceType))
 	}

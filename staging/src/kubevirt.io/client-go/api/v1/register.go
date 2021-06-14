@@ -33,6 +33,7 @@ import (
 const GroupName = "kubevirt.io"
 const SubresourceGroupName = "subresources.kubevirt.io"
 const KubeVirtClientGoSchemeRegistrationVersionEnvVar = "KUBEVIRT_CLIENT_GO_SCHEME_REGISTRATION_VERSION"
+const GuestfsGroup = "libguestfs.kubevirt.io"
 
 var (
 	ApiLatestVersion            = "v1"
@@ -80,6 +81,7 @@ var (
 	VirtualMachineGroupVersionKind                   = schema.GroupVersionKind{Group: GroupName, Version: GroupVersion.Version, Kind: "VirtualMachine"}
 	VirtualMachineInstanceMigrationGroupVersionKind  = schema.GroupVersionKind{Group: GroupName, Version: GroupVersion.Version, Kind: "VirtualMachineInstanceMigration"}
 	KubeVirtGroupVersionKind                         = schema.GroupVersionKind{Group: GroupName, Version: GroupVersion.Version, Kind: "KubeVirt"}
+	GuestfsGroupVersionKind                          = schema.GroupVersionKind{Group: GroupName, Version: GroupVersion.Version, Kind: "GuestfsImageConfig"}
 )
 
 var (
@@ -112,7 +114,6 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 	} else {
 		registerGroupVersions = append(registerGroupVersions, GroupVersions...)
 	}
-
 	for _, groupVersion := range registerGroupVersions {
 		scheme.AddKnownTypes(groupVersion,
 			&VirtualMachineInstance{},
@@ -127,6 +128,7 @@ func addKnownTypes(scheme *runtime.Scheme) error {
 			&VirtualMachineList{},
 			&KubeVirt{},
 			&KubeVirtList{},
+			&GuestfsImageConfig{},
 		)
 		metav1.AddToGroupVersion(scheme, groupVersion)
 	}

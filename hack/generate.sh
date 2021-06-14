@@ -117,7 +117,9 @@ ${KUBEVIRT_DIR}/tools/resource-generator/resource-generator --type=priorityclass
 ${KUBEVIRT_DIR}/tools/resource-generator/resource-generator --type=kv >${ResourceDir}/kv-resource.yaml
 ${KUBEVIRT_DIR}/tools/resource-generator/resource-generator --type=kv-cr --namespace='{{.Namespace}}' --pullPolicy='{{.ImagePullPolicy}}' --featureGates='{{.FeatureGates}}' >${ResourceDir}/kubevirt-cr.yaml.in
 ${KUBEVIRT_DIR}/tools/resource-generator/resource-generator --type=operator-rbac --namespace='{{.Namespace}}' >${ResourceDir}/rbac-operator.authorization.k8s.yaml.in
-
+${KUBEVIRT_DIR}/tools/resource-generator/resource-generator --type gsconfig >${ResourceDir}/gsconfig-resource.yaml
+${KUBEVIRT_DIR}/tools/resource-generator/resource-generator --type gsconfig-cr --registry='{{.DockerPrefix}}' --tag='{{.DockerTag}}' --pullPolicy='{{.ImagePullPolicy}}' >${ResourceDir}/gsconfig-cr.yaml.in
+${KUBEVIRT_DIR}/tools/resource-generator/resource-generator --type gsconfig-rbac >${ResourceDir}/gsconfig-rbac.yaml
 # used for Image fields in manifests
 function getVersion() {
     echo "{{if $1}}@{{$1}}{{else}}:{{.DockerTag}}{{end}}"

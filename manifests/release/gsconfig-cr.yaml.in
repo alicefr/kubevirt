@@ -1,0 +1,1 @@
+{{index .GeneratedManifests "gsconfig-cr.yaml.in"}}

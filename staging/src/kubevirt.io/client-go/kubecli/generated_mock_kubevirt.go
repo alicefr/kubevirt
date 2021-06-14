@@ -287,6 +287,16 @@ func (_mr *_MockKubevirtClientRecorder) DynamicClient() *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "DynamicClient")
 }
 
+func (_m *MockKubevirtClient) GuestfsImageConfig() GuestfsImageConfigInterface {
+	ret := _m.ctrl.Call(_m, "GuestfsImageConfig")
+	ret0, _ := ret[0].(GuestfsImageConfigInterface)
+	return ret0
+}
+
+func (_mr *_MockKubevirtClientRecorder) GuestfsImageConfig() *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "GuestfsImageConfig")
+}
+
 func (_m *MockKubevirtClient) Discovery() discovery.DiscoveryInterface {
 	ret := _m.ctrl.Call(_m, "Discovery")
 	ret0, _ := ret[0].(discovery.DiscoveryInterface)
@@ -1587,4 +1597,79 @@ func (_m *MockKubeVirtInterface) PatchStatus(name string, pt types.PatchType, da
 
 func (_mr *_MockKubeVirtInterfaceRecorder) PatchStatus(arg0, arg1, arg2 interface{}) *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "PatchStatus", arg0, arg1, arg2)
+}
+
+// Mock of GuestfsImageConfigInterface interface
+type MockGuestfsImageConfigInterface struct {
+	ctrl     *gomock.Controller
+	recorder *_MockGuestfsImageConfigInterfaceRecorder
+}
+
+// Recorder for MockGuestfsImageConfigInterface (not exported)
+type _MockGuestfsImageConfigInterfaceRecorder struct {
+	mock *MockGuestfsImageConfigInterface
+}
+
+func NewMockGuestfsImageConfigInterface(ctrl *gomock.Controller) *MockGuestfsImageConfigInterface {
+	mock := &MockGuestfsImageConfigInterface{ctrl: ctrl}
+	mock.recorder = &_MockGuestfsImageConfigInterfaceRecorder{mock}
+	return mock
+}
+
+func (_m *MockGuestfsImageConfigInterface) EXPECT() *_MockGuestfsImageConfigInterfaceRecorder {
+	return _m.recorder
+}
+
+func (_m *MockGuestfsImageConfigInterface) Get(name string, options *v11.GetOptions) (*v117.GuestfsImageConfig, error) {
+	ret := _m.ctrl.Call(_m, "Get", name, options)
+	ret0, _ := ret[0].(*v117.GuestfsImageConfig)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockGuestfsImageConfigInterfaceRecorder) Get(arg0, arg1 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "Get", arg0, arg1)
+}
+
+func (_m *MockGuestfsImageConfigInterface) Create(instance *v117.GuestfsImageConfig) (*v117.GuestfsImageConfig, error) {
+	ret := _m.ctrl.Call(_m, "Create", instance)
+	ret0, _ := ret[0].(*v117.GuestfsImageConfig)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockGuestfsImageConfigInterfaceRecorder) Create(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "Create", arg0)
+}
+
+func (_m *MockGuestfsImageConfigInterface) Update(_param0 *v117.GuestfsImageConfig) (*v117.GuestfsImageConfig, error) {
+	ret := _m.ctrl.Call(_m, "Update", _param0)
+	ret0, _ := ret[0].(*v117.GuestfsImageConfig)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockGuestfsImageConfigInterfaceRecorder) Update(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "Update", arg0)
+}
+
+func (_m *MockGuestfsImageConfigInterface) Delete(name string, options *v11.DeleteOptions) error {
+	ret := _m.ctrl.Call(_m, "Delete", name, options)
+	ret0, _ := ret[0].(error)
+	return ret0
+}
+
+func (_mr *_MockGuestfsImageConfigInterfaceRecorder) Delete(arg0, arg1 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "Delete", arg0, arg1)
+}
+
+func (_m *MockGuestfsImageConfigInterface) List(opts *v11.ListOptions) (*v117.GuestfsImageConfigList, error) {
+	ret := _m.ctrl.Call(_m, "List", opts)
+	ret0, _ := ret[0].(*v117.GuestfsImageConfigList)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockGuestfsImageConfigInterfaceRecorder) List(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "List", arg0)
 }

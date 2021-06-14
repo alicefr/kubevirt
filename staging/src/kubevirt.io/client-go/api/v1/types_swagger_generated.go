@@ -596,3 +596,21 @@ func (NetworkConfiguration) SwaggerDoc() map[string]string {
 		"": "NetworkConfiguration holds network options\n+k8s:openapi-gen=true",
 	}
 }
+
+func (GuestfsImageConfig) SwaggerDoc() map[string]string {
+	return map[string]string{
+		"": "GuestfsImageConfig holds the guestfs image information\n+k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object\n+k8s:openapi-gen=true\n+genclient",
+	}
+}
+
+func (GuestfsImageConfigSpec) SwaggerDoc() map[string]string {
+	return map[string]string{
+		"": "+k8s:openapi-gen=true",
+	}
+}
+
+func (GuestfsImageConfigList) SwaggerDoc() map[string]string {
+	return map[string]string{
+		"": "GuestfsImageConfigList is a list of GuestfsImageConfig\n\n+k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object\n+k8s:openapi-gen=true",
+	}
+}

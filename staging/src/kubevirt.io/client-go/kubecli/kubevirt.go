@@ -68,6 +68,7 @@ type KubevirtClient interface {
 	PrometheusClient() promclient.Interface
 	KubernetesSnapshotClient() k8ssnapshotclient.Interface
 	DynamicClient() dynamic.Interface
+	GuestfsImageConfig() GuestfsImageConfigInterface
 	kubernetes.Interface
 	Config() *rest.Config
 }
@@ -234,4 +235,12 @@ type KubeVirtInterface interface {
 	Patch(name string, pt types.PatchType, data []byte, subresources ...string) (result *v1.KubeVirt, err error)
 	UpdateStatus(*v1.KubeVirt) (*v1.KubeVirt, error)
 	PatchStatus(name string, pt types.PatchType, data []byte) (result *v1.KubeVirt, err error)
+}
+
+type GuestfsImageConfigInterface interface {
+	Get(name string, options *k8smetav1.GetOptions) (*v1.GuestfsImageConfig, error)
+	Create(instance *v1.GuestfsImageConfig) (*v1.GuestfsImageConfig, error)
+	Update(*v1.GuestfsImageConfig) (*v1.GuestfsImageConfig, error)
+	Delete(name string, options *k8smetav1.DeleteOptions) error
+	List(opts *k8smetav1.ListOptions) (*v1.GuestfsImageConfigList, error)
 }

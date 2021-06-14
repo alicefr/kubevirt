@@ -1887,3 +1887,31 @@ type NetworkConfiguration struct {
 	PermitSlirpInterface              *bool  `json:"permitSlirpInterface,omitempty"`
 	PermitBridgeInterfaceOnPodNetwork *bool  `json:"permitBridgeInterfaceOnPodNetwork,omitempty"`
 }
+
+// GuestfsImageConfig holds the guestfs image information
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:openapi-gen=true
+// +genclient
+type GuestfsImageConfig struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+	Spec              GuestfsImageConfigSpec `json:"spec" valid:"required"`
+}
+
+//
+// +k8s:openapi-gen=true
+type GuestfsImageConfigSpec struct {
+	ImageRegistry   string           `json:"imageRegistry"`
+	ImagePullPolicy k8sv1.PullPolicy `json:"imagePullPolicy"`
+	ImageTag        string           `json:"imageTag"`
+}
+
+// GuestfsImageConfigList is a list of GuestfsImageConfig
+//
+// +k8s:deepcopy-gen:interfaces=k8s.io/apimachinery/pkg/runtime.Object
+// +k8s:openapi-gen=true
+type GuestfsImageConfigList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []GuestfsImageConfig `json:"items"`
+}

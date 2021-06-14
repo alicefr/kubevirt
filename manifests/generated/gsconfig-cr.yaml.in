@@ -1,0 +1,9 @@
+---
+apiVersion: kubevirt.io/v1
+kind: GuestfsImageConfig
+metadata:
+  name: config
+spec:
+  imagePullPolicy: {{.ImagePullPolicy}}
+  imageRegistry: {{.DockerPrefix}}
+  imageTag: {{.DockerTag}}
