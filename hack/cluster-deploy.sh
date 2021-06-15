@@ -154,4 +154,9 @@ until _kubectl wait -n kubevirt kv kubevirt --for condition=Available --timeout 
     sleep 1m
 done
 
+# Install guestfs resource
+_kubectl apply -f ${MANIFESTS_OUT_DIR}/release/olm/bundle/gsconfig-rbac.yaml
+_kubectl apply -f ${MANIFESTS_OUT_DIR}/release/olm/bundle/gsconfig-resource.yaml
+_kubectl apply -f ${MANIFESTS_OUT_DIR}/release/gsconfig-cr.yaml
+
 echo "Done $0"
