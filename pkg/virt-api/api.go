@@ -286,6 +286,15 @@ func (app *virtAPIApp) composeSubresources() {
 			To(func(request *restful.Request, response *restful.Response) {
 				response.WriteAsJson(virtversion.Get())
 			}).Operation(version.Version + "Version"))
+		subws.Route(subws.GET(rest.SubResourcePath("guestfs")).Produces(restful.MIME_JSON).
+			To(func(request *restful.Request, response *restful.Response) {
+				kv, _ := app.virtCli.KubeVirt(app.namespace).Get("kubevirt", &metav1.GetOptions{})
+				gs := kubecli.GuestfsInfo{
+					Registry: kv.Status.ObservedKubeVirtRegistry,
+					Tag:      kv.Status.ObservedKubeVirtVersion,
+				}
+				response.WriteAsJson(gs)
+			}).Operation(version.Version + "Guestfs"))
 		subws.Route(subws.GET(rest.SubResourcePath("healthz")).
 			To(healthz.KubeConnectionHealthzFuncFactory(app.clusterConfig, apiHealthVersion)).
 			Consumes(restful.MIME_JSON).

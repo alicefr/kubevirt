@@ -187,6 +187,19 @@ var _ = Describe("Virt-api", func() {
 			// TODO: Check version
 		}, 5)
 
+		FIt("should have a guestfs endpoint", func() {
+			app.authorizor = authorizorMock
+			authorizorMock.EXPECT().
+				Authorize(gomock.Not(gomock.Nil())).
+				Return(true, "", nil).
+				AnyTimes()
+			app.Compose()
+			resp, err := http.Get(backend.URL + "/apis/subresources.kubevirt.io/v1alpha3/guestfs")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			// TODO: Check version
+		}, 5)
+
 		It("should return info on the api group version", func() {
 			app.authorizor = authorizorMock
 			authorizorMock.EXPECT().

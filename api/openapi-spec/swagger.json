@@ -6279,6 +6279,19 @@
      }
     }
    },
+   "/apis/subresources.kubevirt.io/v1/guestfs": {
+    "get": {
+     "produces": [
+      "application/json"
+     ],
+     "operationId": "v1Guestfs",
+     "responses": {
+      "401": {
+       "description": "Unauthorized"
+      }
+     }
+    }
+   },
    "/apis/subresources.kubevirt.io/v1/healthz": {
     "get": {
      "description": "Health endpoint",
@@ -7025,6 +7038,19 @@
      }
     }
    },
+   "/apis/subresources.kubevirt.io/v1alpha3/guestfs": {
+    "get": {
+     "produces": [
+      "application/json"
+     ],
+     "operationId": "v1alpha3Guestfs",
+     "responses": {
+      "401": {
+       "description": "Unauthorized"
+      }
+     }
+    }
+   },
    "/apis/subresources.kubevirt.io/v1alpha3/healthz": {
     "get": {
      "description": "Health endpoint",
@@ -7764,7 +7790,7 @@
      "produces": [
       "application/json"
      ],
-     "operationId": "func7",
+     "operationId": "func8",
      "responses": {
       "401": {
        "description": "Unauthorized"
