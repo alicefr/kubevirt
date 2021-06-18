@@ -71,7 +71,7 @@ func NewGuestfsShellCommand(clientConfig clientcmd.ClientConfig) *cobra.Command 
 	}
 	cmd.PersistentFlags().StringVar(&pvc, "pvc", "", "pvc claim name")
 	cmd.MarkPersistentFlagRequired("pvc")
-	cmd.PersistentFlags().StringVar(&image, "image", defaultImage, "libguestfs-tools container image")
+	cmd.PersistentFlags().StringVar(&image, "image", "", "libguestfs-tools container image")
 	cmd.PersistentFlags().StringVar(&namespace, "pvc-namespace", "default", "namespace of the pvc")
 	cmd.PersistentFlags().StringVar(&pullPolicy, "pull-policy", string(pullPolicyDefault), "pull policy for the libguestfs image")
 	cmd.PersistentFlags().BoolVar(&kvm, "kvm", true, "Use kvm for the libguestfs-tools container")
@@ -135,6 +135,9 @@ func (c *guestfsCommand) run(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	if err = client.setImage(); err != nil {
+		return err
+	}
 	exist, _ := client.existsPVC(pvc, namespace)
 	if !exist {
 		return fmt.Errorf("The PVC %s doesn't exist", pvc)
@@ -159,6 +162,29 @@ type K8sClient struct {
 	Client     kubernetes.Interface
 	config     *rest.Config
 	VirtClient kubecli.KubevirtClient
+}
+
+func (client *K8sClient) setImage() error {
+	var imageName string
+	info, err := client.VirtClient.GuestfsVersion().Get()
+	if err != nil {
+		return err
+	}
+	// Set the image version.
+	if info.Digest != "" {
+		imageName = fmt.Sprintf("%s@%s", defaultImageName, info.Digest)
+	} else if info.Tag != "" {
+		imageName = fmt.Sprintf("%s:%s", defaultImageName, info.Tag)
+	} else {
+		imageName = fmt.Sprintf("%s:latest", defaultImageName)
+	}
+
+	if info.Registry != "" {
+		image = fmt.Sprintf("%s/%s", info.Registry, imageName)
+		return nil
+	}
+	image = imageName
+	return nil
 }
 
 func createClient(config *rest.Config, virtClientConfig clientcmd.ClientConfig) (*K8sClient, error) {
