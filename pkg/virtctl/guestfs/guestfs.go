@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"math/rand"
 	"os"
 	"os/signal"
 	"syscall"
@@ -27,13 +28,11 @@ import (
 
 const (
 	defaultImageName = "libguestfs-tools"
-	defaultImage     = "quay.io/kubevirt/" + defaultImageName + ":latest"
 	// KvmDevice defines the resource as in pkg/virt-controller/services/template.go, but we don't import the package to avoid compile conflicts when the os is windows
 	KvmDevice         = "devices.kubevirt.io/kvm"
-	volume            = "volume"
 	contName          = "libguestfs"
 	diskDir           = "/disk"
-	diskPath          = "/dev/vda"
+	diskPath          = "/dev"
 	podNamePrefix     = "libguestfs-tools"
 	appliancePath     = "/usr/local/lib/guestfs"
 	tmpDirVolumeName  = "libguestfs-tmp-dir"
@@ -42,7 +41,7 @@ const (
 )
 
 var (
-	pvc         string
+	pvcs        []string
 	image       string
 	timeout     = 500 * time.Second
 	pullPolicy  string
@@ -62,15 +61,14 @@ func NewGuestfsShellCommand(clientConfig clientcmd.ClientConfig) *cobra.Command 
 	cmd := &cobra.Command{
 		Use:     "guestfs",
 		Short:   "Start a shell into the libguestfs pod",
-		Long:    `Create a pod with libguestfs-tools, mount the pvc and attach a shell to it. The pvc is mounted under the /disks directory inside the pod for filesystem-based pvcs, or as /dev/vda for block-based pvcs`,
+		Args:    cobra.MinimumNArgs(1),
+		Long:    `Create a pod with libguestfs-tools, mount the pvc and attach a shell to it. The pvc is mounted under the /disks/<pvc-name> directory inside the pod for filesystem-based pvcs, or as /dev/<pvc-name> for block-based pvcs`,
 		Example: usage(),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			c := guestfsCommand{clientConfig: clientConfig}
 			return c.run(cmd, args)
 		},
 	}
-	cmd.PersistentFlags().StringVar(&pvc, "pvc", "", "pvc claim name")
-	cmd.MarkPersistentFlagRequired("pvc")
 	cmd.PersistentFlags().StringVar(&image, "image", "", "libguestfs-tools container image")
 	cmd.PersistentFlags().StringVar(&pullPolicy, "pull-policy", string(pullPolicyDefault), "pull policy for the libguestfs image")
 	cmd.PersistentFlags().BoolVar(&kvm, "kvm", true, "Use kvm for the libguestfs-tools container")
@@ -136,11 +134,10 @@ func init() {
 }
 
 func (c *guestfsCommand) run(cmd *cobra.Command, args []string) error {
-	namespace, _, err := c.clientConfig.Namespace()
-	if err != nil {
-		return err
+	if len(args) < 1 {
+		return fmt.Errorf("Please provide at least a PVC")
 	}
-
+	pvcs = args
 	if pullPolicy != string(corev1.PullAlways) &&
 		pullPolicy != string(corev1.PullNever) &&
 		pullPolicy != string(corev1.PullIfNotPresent) {
@@ -160,25 +157,27 @@ func (c *guestfsCommand) run(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	}
+	namespace, _, err := c.clientConfig.Namespace()
+	if err != nil {
+		return err
+	}
 
 	fmt.Printf("Use image: %s \n", image)
-	exist, _ := client.existsPVC(pvc, namespace)
-	if !exist {
-		return fmt.Errorf("The PVC %s doesn't exist", pvc)
-	}
-	inUse, err = client.isPVCinUse(pvc, namespace)
-	if err != nil {
-		return err
-	}
-	if inUse {
-		return fmt.Errorf("PVC %s is used by another pod", pvc)
-	}
-	isBlock, err := client.isPVCVolumeBlock(pvc, namespace)
-	if err != nil {
-		return err
+	for _, pvc := range pvcs {
+		exist, _ := client.existsPVC(pvc, namespace)
+		if !exist {
+			return fmt.Errorf("The PVC %s doesn't exist", pvc)
+		}
+		inUse, err = client.isPVCinUse(pvc, namespace)
+		if err != nil {
+			return err
+		}
+		if inUse {
+			return fmt.Errorf("PVC %s is used by another pod", pvc)
+		}
 	}
 	defer client.removePod(namespace)
-	return client.createInteractivePodWithPVC(pvc, image, namespace, "/entrypoint.sh", []string{}, isBlock)
+	return client.createInteractivePodWithPVC(pvcs, image, namespace, "/entrypoint.sh", []string{})
 }
 
 // K8sClient holds the information of the Kubernetes client
@@ -227,6 +226,16 @@ func createClient(config *rest.Config, virtClientConfig clientcmd.ClientConfig) 
 		config:     config,
 		VirtClient: virtClient,
 	}, nil
+}
+
+func randomString() string {
+	var letters = []rune("abcdefghijklmnopqrstuvwxyz")
+
+	s := make([]rune, 10)
+	for i := range s {
+		s[i] = letters[rand.Intn(len(letters))]
+	}
+	return string(s)
 }
 
 func (client *K8sClient) existsPVC(pvc, ns string) (bool, error) {
@@ -335,10 +344,10 @@ func (client *K8sClient) getPodsForPVC(pvcName, ns string) ([]corev1.Pod, error)
 	return pods, nil
 }
 
-func createLibguestfsPod(pvc, image, cmd string, args []string, kvm, isBlock bool) *corev1.Pod {
+func (client *K8sClient) createLibguestfsPod(pvcs []string, image, ns, cmd string, args []string, kvm bool) (*corev1.Pod, error) {
 	var resources corev1.ResourceRequirements
 	var user, group int64
-	podName = fmt.Sprintf("%s-%s", podNamePrefix, pvc)
+	podName = fmt.Sprintf("%s-%s", podNamePrefix, randomString())
 	user = 0
 	group = 0
 	if kvm {
@@ -354,15 +363,6 @@ func createLibguestfsPod(pvc, image, cmd string, args []string, kvm, isBlock boo
 		},
 		Spec: corev1.PodSpec{
 			Volumes: []corev1.Volume{
-				{
-					Name: volume,
-					VolumeSource: corev1.VolumeSource{
-						PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
-							ClaimName: pvc,
-							ReadOnly:  false,
-						},
-					},
-				},
 				// Use emptyDir to store temporary files generated by libguestfs
 				{
 					Name: tmpDirVolumeName,
@@ -415,25 +415,39 @@ func createLibguestfsPod(pvc, image, cmd string, args []string, kvm, isBlock boo
 			RestartPolicy: corev1.RestartPolicyNever,
 		},
 	}
-	if isBlock {
-		c.Spec.Containers[0].VolumeDevices = append(c.Spec.Containers[0].VolumeDevices, corev1.VolumeDevice{
-			Name:       volume,
-			DevicePath: diskPath,
+	for _, pvc := range pvcs {
+		c.Spec.Volumes = append(c.Spec.Volumes, corev1.Volume{
+			Name: pvc,
+			VolumeSource: corev1.VolumeSource{
+				PersistentVolumeClaim: &corev1.PersistentVolumeClaimVolumeSource{
+					ClaimName: pvc,
+					ReadOnly:  false,
+				},
+			},
 		})
-		fmt.Printf("The PVC has been mounted at %s \n", diskPath)
-		return c
+		isBlock, err := client.isPVCVolumeBlock(pvc, ns)
+		if err != nil {
+			return nil, err
+		}
+		if isBlock {
+			c.Spec.Containers[0].VolumeDevices = append(c.Spec.Containers[0].VolumeDevices, corev1.VolumeDevice{
+				Name:       pvc,
+				DevicePath: fmt.Sprintf("%s/%s", diskPath, pvc),
+			})
+			continue
+		}
+		// PVC volume mode is filesystem
+		c.Spec.Containers[0].VolumeMounts = append(c.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
+			Name:      pvc,
+			ReadOnly:  false,
+			MountPath: fmt.Sprintf("%s/%s", diskDir, pvc),
+		})
 	}
-	// PVC volume mode is filesystem
-	c.Spec.Containers[0].VolumeMounts = append(c.Spec.Containers[0].VolumeMounts, corev1.VolumeMount{
-		Name:      volume,
-		ReadOnly:  false,
-		MountPath: diskDir,
-	})
-
 	c.Spec.Containers[0].WorkingDir = diskDir
-	fmt.Printf("The PVC has been mounted at %s \n", diskDir)
+	fmt.Printf("The filesystem PVCs have been mounted at %s/<pvc-name> \n", diskDir)
+	fmt.Printf("The block PVCs have been passed as devices %s/<pvc-name> \n", diskPath)
 
-	return c
+	return c, nil
 }
 
 // createAttacher attaches the stdin, stdout, and stderr to the container shell
@@ -472,9 +486,12 @@ func createAttacher(client *K8sClient, p *corev1.Pod, command string) error {
 		"If you don't see a command prompt, try pressing enter.", resChan)
 }
 
-func (client *K8sClient) createInteractivePodWithPVC(pvc, image, ns, command string, args []string, isblock bool) error {
-	pod := createLibguestfsPod(pvc, image, command, args, kvm, isblock)
-	p, err := client.Client.CoreV1().Pods(ns).Create(context.TODO(), pod, metav1.CreateOptions{})
+func (client *K8sClient) createInteractivePodWithPVC(pvcs []string, image, ns, command string, args []string) error {
+	pod, err := client.createLibguestfsPod(pvcs, image, ns, command, args, kvm)
+	if err != nil {
+		return err
+	}
+	pod, err = client.Client.CoreV1().Pods(ns).Create(context.TODO(), pod, metav1.CreateOptions{})
 	if err != nil {
 		return err
 	}
@@ -482,7 +499,7 @@ func (client *K8sClient) createInteractivePodWithPVC(pvc, image, ns, command str
 	if err != nil {
 		return err
 	}
-	return createAttacherFunc(client, p, command)
+	return createAttacherFunc(client, pod, command)
 }
 
 func (client *K8sClient) removePod(ns string) error {
