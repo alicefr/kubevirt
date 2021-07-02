@@ -71,7 +71,7 @@ var _ = SIGDescribe("[rfe_id:6364][[Serial]Guestfs", func() {
 	runGuestfsOnPVC := func(pvcClaim string) {
 		podName := "libguestfs-tools-" + pvcClaim
 		guestfsCmd := tests.NewVirtctlCommand("guestfs",
-			"--pvc", pvcClaim,
+			pvcClaim,
 			"--namespace", util.NamespaceTestDefault)
 		go func() {
 			defer GinkgoRecover()
@@ -101,6 +101,10 @@ var _ = SIGDescribe("[rfe_id:6364][[Serial]Guestfs", func() {
 		runGuestfsOnPVC(pvc.ObjectMeta.Name)
 
 	}
+
+	//	getLibguestfsPods := func() string[] {
+	//		_, err = virtClient.CoreV1().Pods(util.NamespaceTestDefault).List(context.Background(), metav1.ListOptions{})
+	//	}
 
 	Context("Run libguestfs on PVCs", func() {
 		BeforeEach(func() {
@@ -135,11 +139,11 @@ var _ = SIGDescribe("[rfe_id:6364][[Serial]Guestfs", func() {
 			podName := "libguestfs-tools-" + pvcClaim
 			pvc := createPVCFilesystem(pvcClaim)
 			createGuestfsWithPVC(pvc)
-			stdout, stderr, err := execCommandLibguestfsPod(podName, []string{"qemu-img", "create", "/disks/disk.img", "500M"})
+			stdout, stderr, err := execCommandLibguestfsPod(podName, []string{"qemu-img", "create", fmt.Sprintf("/disks/%s/disk.img", pvcClaim), "500M"})
 			Expect(stderr).To(Equal(""))
 			Expect(stdout).To(ContainSubstring("Formatting"))
 			Expect(err).ToNot(HaveOccurred())
-			stdout, stderr, err = execCommandLibguestfsPod(podName, []string{"guestfish", "-a", "/disks/disk.img", "run"})
+			stdout, stderr, err = execCommandLibguestfsPod(podName, []string{"guestfish", "-a", fmt.Sprintf("/disks/%s/disk.img", pvcClaim), "run"})
 			Expect(stderr).To(Equal(""))
 			Expect(stdout).To(Equal(""))
 			Expect(err).ToNot(HaveOccurred())
@@ -153,7 +157,7 @@ var _ = SIGDescribe("[rfe_id:6364][[Serial]Guestfs", func() {
 			pvc := createPVCFilesystem(pvcClaim)
 			createGuestfsWithPVC(pvc)
 			guestfsCmd := tests.NewVirtctlCommand("guestfs",
-				"--pvc", pvcClaim,
+				pvcClaim,
 				"--namespace", util.NamespaceTestDefault)
 			Expect(guestfsCmd.Execute()).To(HaveOccurred())
 		})
@@ -165,7 +169,7 @@ var _ = SIGDescribe("[rfe_id:6364][[Serial]Guestfs", func() {
 			podName := "libguestfs-tools-" + pvcClaim
 			tests.CreateBlockVolumePvAndPvc("500Mi")
 			runGuestfsOnPVC(pvcClaim)
-			stdout, stderr, err := execCommandLibguestfsPod(podName, []string{"guestfish", "-a", "/dev/vda", "run"})
+			stdout, stderr, err := execCommandLibguestfsPod(podName, []string{"guestfish", "-a", fmt.Sprintf("/dev/%s", pvcClaim), "run"})
 			Expect(stderr).To(Equal(""))
 			Expect(stdout).To(Equal(""))
 			Expect(err).ToNot(HaveOccurred())
