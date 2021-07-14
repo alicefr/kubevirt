@@ -42,7 +42,7 @@ Waiting for container libguestfs still in pending, reason: ContainerCreating, me
 Waiting for container libguestfs still in pending, reason: ContainerCreating, message:  
 bash-5.0#
 ```
-Once the libguestfs-tools pod has been deployed and the user can access the disk and execute desired commands. Later, when the user has finished to perform the operation on the disk, it is enough to `exit` from the container and the pod will be automatically terminated.
+Once the libguestfs-tools pod has been deployed and the user can access the disk and execute desired commands. Later, when the user has finished to perform the operations on the disk, it is enough to `exit` from the container and the pod will be automatically terminated.
  
 1. Inspect the disk filesystem for getting the version of the OS on the disk:
 ```bash
