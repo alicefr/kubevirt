@@ -20,6 +20,7 @@
 package device_manager
 
 import (
+	"fmt"
 	"math"
 	"os"
 	"strings"
@@ -136,7 +137,12 @@ func (c *DeviceController) updatePermittedHostDevicePlugins() (map[string]Contro
 					pciDev.ExternalResourceProvider)
 				// do not add a device plugin for this resource if it's being provided via an external device plugin
 				if !pciDev.ExternalResourceProvider {
-					supportedPCIDeviceMap[strings.ToLower(pciDev.PCIVendorSelector)] = pciDev.ResourceName
+					if pciDev.PCIVendorSelector != "" {
+						supportedPCIDeviceMap[strings.ToLower(pciDev.PCIVendorSelector)] = pciDev.ResourceName
+					} else if pciDev.PCIHostAddBusSelector != nil {
+						id := fmt.Sprintf("%s/%s", pciDev.PCIHostAddBusSelector.Host, strings.ToLower(pciDev.PCIHostAddBusSelector.Address))
+						supportedPCIDeviceMap[id] = pciDev.ResourceName
+					}
 				}
 			}
 			pciHostDevices := discoverPermittedHostPCIDevices(supportedPCIDeviceMap)
