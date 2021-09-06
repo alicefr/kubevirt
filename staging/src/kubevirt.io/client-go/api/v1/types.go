@@ -2054,7 +2054,9 @@ type PermittedHostDevices struct {
 // +k8s:openapi-gen=true
 type PciHostDevice struct {
 	// The vendor_id:product_id tuple of the PCI device
-	PCIVendorSelector string `json:"pciVendorSelector"`
+	PCIVendorSelector string `json:"pciVendorSelector,omitempty"`
+	// PCIHostAddBusSelector identifies the host and the bus tuple for a specific PCI device
+	PCIHostAddBusSelector string `json:"pciHostAndBusSelector,omitempty"`
 	// The name of the resource that is representing the device. Exposed by
 	// a device plugin and requested by VMs. Typically of the form
 	// vendor.com/product_nameThe name of the resource that is representing
@@ -2064,6 +2066,15 @@ type PciHostDevice struct {
 	// If true, KubeVirt will leave the allocation and monitoring to an
 	// external device plugin
 	ExternalResourceProvider bool `json:"externalResourceProvider,omitempty"`
+}
+
+// PCIHostAddBusSelector allows to select the device based on the node and bus address
+// +k8s:openapi-gen=true
+type PCIHostAddBusSelector struct {
+	// Host identify the node where the device is attached
+	Host string `json:"host,omitempty"`
+	// Address identify the bus where the device is attached
+	Address string `json:"address,omitempty"`
 }
 
 // MediatedHostDevice represents a host mediated device allowed for passthrough
