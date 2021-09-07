@@ -29,6 +29,7 @@ import (
 
 const HookSidecarListAnnotationName = "hooks.kubevirt.io/hookSidecars"
 const HookSocketsSharedDirectory = "/var/run/kubevirt-hooks"
+const HookConfigMapDirectory = "/var/run/hooks/config"
 
 type HookSidecarList []HookSidecar
 
@@ -37,6 +38,7 @@ type HookSidecar struct {
 	ImagePullPolicy k8sv1.PullPolicy `json:"imagePullPolicy"`
 	Command         []string         `json:"command,omitempty"`
 	Args            []string         `json:"args,omitempty"`
+	ConfigMap       string           `json:"configMap,omitempty"`
 }
 
 func UnmarshalHookSidecarList(vmiObject *v1.VirtualMachineInstance) (HookSidecarList, error) {

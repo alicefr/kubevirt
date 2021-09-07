@@ -1290,6 +1290,27 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, t
 				},
 			},
 		}
+
+		// Add ConfigMap for the sidecar
+		if requestedHookSidecar.ConfigMap != "" {
+			volumeName := fmt.Sprintf("config-sidecar-%d", i)
+			volumes = append(volumes, k8sv1.Volume{
+				Name: volumeName,
+				VolumeSource: k8sv1.VolumeSource{
+					ConfigMap: &k8sv1.ConfigMapVolumeSource{
+						LocalObjectReference: k8sv1.LocalObjectReference{
+							Name: requestedHookSidecar.ConfigMap,
+						},
+					},
+				},
+			})
+			sidecar.VolumeMounts = append(sidecar.VolumeMounts, k8sv1.VolumeMount{
+				Name:      volumeName,
+				MountPath: hooks.HookConfigMapDirectory,
+				ReadOnly:  true,
+			})
+		}
+
 		if nonRoot {
 			sidecar.SecurityContext.RunAsGroup = &userId
 			sidecar.SecurityContext.RunAsNonRoot = &nonRoot
