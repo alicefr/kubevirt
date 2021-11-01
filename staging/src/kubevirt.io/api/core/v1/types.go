@@ -73,7 +73,8 @@ type EvictionStrategy string
 type StartStrategy string
 
 const (
-	StartStrategyPaused StartStrategy = "Paused"
+	StartStrategyPaused      StartStrategy = "Paused"
+	StartStrategyMaintenance StartStrategy = "Maintenance"
 )
 
 // VirtualMachineInstanceSpec is a description of a VirtualMachineInstance.
@@ -1155,6 +1156,8 @@ const (
 	// VMI will initially be running--and restarted if a failure occurs.
 	// It will not be restarted upon successful completion.
 	RunStrategyRerunOnFailure VirtualMachineRunStrategy = "RerunOnFailure"
+
+	RunStrategyMaintenance VirtualMachineRunStrategy = "Maintenance"
 )
 
 // VirtualMachineSpec describes how the proper VirtualMachine
@@ -1752,7 +1755,8 @@ type StartOptions struct {
 	// - All: all dry run stages will be processed
 	// +optional
 	// +listType=atomic
-	DryRun []string `json:"dryRun,omitempty" protobuf:"bytes,5,rep,name=dryRun"`
+	DryRun      []string `json:"dryRun,omitempty" protobuf:"bytes,5,rep,name=dryRun"`
+	Maintenance bool     `json:"maintenance,omitempty" protobuf:"varint,7,opt,name=paused"`
 }
 
 // PauseOptions may be provided on pause request.

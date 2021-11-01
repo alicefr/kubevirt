@@ -1105,7 +1105,7 @@ func validateRequestLimitOrCoresProvidedOnDedicatedCPUPlacement(field *k8sfield.
 
 func validateStartStrategy(field *k8sfield.Path, spec *v1.VirtualMachineInstanceSpec) (causes []metav1.StatusCause) {
 	if spec.StartStrategy != nil {
-		if *spec.StartStrategy != v1.StartStrategyPaused {
+		if *spec.StartStrategy != v1.StartStrategyPaused && *spec.StartStrategy != v1.StartStrategyMaintenance {
 			causes = append(causes, metav1.StatusCause{
 				Type:    metav1.CauseTypeFieldValueInvalid,
 				Message: fmt.Sprintf("%s is set with an unrecognized option: %s", field.Child("startStrategy").String(), *spec.StartStrategy),

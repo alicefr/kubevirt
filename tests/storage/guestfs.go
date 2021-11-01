@@ -22,7 +22,7 @@ type fakeAttacher struct {
 }
 
 // fakeCreateAttacher simulates the attacher to the pod console. It has to block until the test terminates.
-func (f *fakeAttacher) fakeCreateAttacher(client *guestfs.K8sClient, p *corev1.Pod, command string) error {
+func (f *fakeAttacher) fakeCreateAttacher(client *guestfs.K8sClient, p *corev1.Pod) error {
 	<-f.done
 	return nil
 }

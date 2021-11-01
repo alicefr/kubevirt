@@ -649,7 +649,19 @@ func (c *VMController) startStop(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualM
 			return &syncErrorImpl{fmt.Errorf("Failure while starting VMI: %v", err), FailedCreateReason}
 		}
 		return nil
-
+	case virtv1.RunStrategyMaintenance:
+		if vmi != nil {
+			log.Log.Object(vmi).Infof("VMI %s already exists", vmi.Name)
+			return nil
+		}
+		if hasStartRequest(vm) {
+			log.Log.Object(vm).Infof("%s due to runStrategy: %s", startingVmMsg, runStrategy)
+			err := c.startVMI(vm)
+			if err != nil {
+				return &syncErrorImpl{fmt.Errorf("Failure while starting VMI in maintenance mode: %v", err), FailedCreateReason}
+			}
+		}
+		return nil
 	case virtv1.RunStrategyRerunOnFailure:
 		// For this RunStrategy, a VMI should only be restarted if it failed.
 		// If a VMI enters the Succeeded phase, it should not be restarted.
@@ -1103,8 +1115,12 @@ func (c *VMController) setupVMIFromVM(vm *virtv1.VirtualMachine) *virtv1.Virtual
 	vmi.ObjectMeta.Namespace = vm.ObjectMeta.Namespace
 	vmi.Spec = vm.Spec.Template.Spec
 
-	if hasStartPausedRequest(vm) {
+	switch {
+	case hasStartPausedRequest(vm):
 		strategy := virtv1.StartStrategyPaused
+		vmi.Spec.StartStrategy = &strategy
+	case startWithMaintenaceMode(vm):
+		strategy := virtv1.StartStrategyMaintenance
 		vmi.Spec.StartStrategy = &strategy
 	}
 
@@ -1167,6 +1183,17 @@ func hasStopRequestForVMI(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineI
 	return stateChange.Action == virtv1.StopRequest &&
 		stateChange.UID != nil &&
 		*stateChange.UID == vmi.UID
+}
+
+func startWithMaintenaceMode(vm *virtv1.VirtualMachine) bool {
+	strategy, err := vm.RunStrategy()
+	if err != nil {
+		return false
+	}
+	if strategy == virtv1.RunStrategyMaintenance {
+		return true
+	}
+	return false
 }
 
 // no special meaning, randomly generated on my box.

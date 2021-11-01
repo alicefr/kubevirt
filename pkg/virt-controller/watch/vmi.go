@@ -1001,12 +1001,20 @@ func (c *VMIController) sync(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod,
 			log.Log.V(3).Object(vmi).Infof("Delaying pod creation while DataVolume populates")
 			return nil
 		}
+		var strategy virtv1.StartStrategy
+		if vmi.Spec.StartStrategy != nil {
+			strategy = *vmi.Spec.StartStrategy
+		}
+
 		var templatePod *k8sv1.Pod
 		var err error
-		if isWaitForFirstConsumer {
+		switch {
+		case isWaitForFirstConsumer:
 			log.Log.V(3).Object(vmi).Infof("Scheduling temporary pod for WaitForFirstConsumer DV")
 			templatePod, err = c.templateService.RenderLaunchManifestNoVm(vmi)
-		} else {
+		case strategy == virtv1.StartStrategyMaintenance:
+			templatePod, err = c.templateService.RenderGuestfsManifest(vmi)
+		default:
 			templatePod, err = c.templateService.RenderLaunchManifest(vmi)
 		}
 		if _, ok := err.(services.PvcNotFoundError); ok {

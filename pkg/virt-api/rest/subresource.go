@@ -475,7 +475,7 @@ func (app *SubresourceAPIApp) StartVMRequestHandler(request *restful.Request, re
 			_, patchErr = app.virtCli.VirtualMachine(namespace).Patch(vm.GetName(), types.MergePatchType, []byte(patchString), &k8smetav1.PatchOptions{DryRun: bodyStruct.DryRun})
 		}
 
-	case v1.RunStrategyRerunOnFailure, v1.RunStrategyManual:
+	case v1.RunStrategyRerunOnFailure, v1.RunStrategyManual, v1.RunStrategyMaintenance:
 		needsRestart := false
 		if (runStrategy == v1.RunStrategyRerunOnFailure && vmi != nil && vmi.Status.Phase == v1.Succeeded) ||
 			(runStrategy == v1.RunStrategyManual && vmi != nil && vmi.IsFinal()) {
