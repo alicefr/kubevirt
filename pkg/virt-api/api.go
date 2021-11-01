@@ -369,11 +369,13 @@ func (app *virtAPIApp) composeSubresources() {
 			To(subresourceApp.DumpClusterProfilerHandler).
 			Operation(version.Version + "dump-cluster-profiler"))
 
-		subws.Route(subws.GET(rest.SubResourcePath("guestfs")).Produces(restful.MIME_JSON).
-			To(app.GetGsInfo()).
-			Operation(version.Version+"Guestfs").
-			Returns(http.StatusOK, "OK", "").
-			Returns(http.StatusBadRequest, httpStatusBadRequestMessage, ""))
+		subws.Route(subws.GET(rest.NamespacedResourcePath(subresourcesvmGVR) + rest.SubResourcePath("guestfs")).
+			To(subresourceApp.GuestfsRequestHandler).
+			Param(rest.NamespaceParam(subws)).
+			Param(rest.NameParam(subws)).
+			Operation(version.Version + "guestfs").
+			Doc("Create a guestfs pod for the disk of the specified VirtualMachineInstance."))
+
 		subws.Route(subws.GET(rest.SubResourcePath("healthz")).
 			To(healthz.KubeConnectionHealthzFuncFactory(app.clusterConfig, apiHealthVersion)).
 			Consumes(restful.MIME_JSON).

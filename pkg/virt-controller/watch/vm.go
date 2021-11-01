@@ -1116,10 +1116,14 @@ func (c *VMController) setupVMIFromVM(vm *virtv1.VirtualMachine) *virtv1.Virtual
 	vmi.ObjectMeta.Namespace = vm.ObjectMeta.Namespace
 	vmi.Spec = vm.Spec.Template.Spec
 
-	if hasStartPausedRequest(vm) {
+	var strategy *virtv1.StartStrategy
+	switch {
+	case hasStartPausedRequest(vm):
 		strategy := virtv1.StartStrategyPaused
-		vmi.Spec.StartStrategy = &strategy
+	case startWithMaintenaceMode(vm):
+		strategy := virtv1.StartStrategyMaintenance
 	}
+	vmi.Spec.StartStrategy = strategy
 
 	setupStableFirmwareUUID(vm, vmi)
 
@@ -1159,6 +1163,17 @@ func hasStartPausedRequest(vm *virtv1.VirtualMachine) bool {
 				return true
 			}
 		}
+	}
+	return false
+}
+
+func startWithMaintenaceMode(vm *virtv1.VirtualMachine) bool {
+	strategy, err := vm.RunStrategy()
+	if err != nil {
+		return false
+	}
+	if strategy == virtv1.RunStrategyMaintenance {
+		return true
 	}
 	return false
 }

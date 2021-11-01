@@ -236,7 +236,6 @@ func isInfoOrHealthEndpoint(req *restful.Request) bool {
 	noAuthEndpoints := []string{
 		"version",
 		"healthz",
-		"guestfs",
 		// the profiler endpoints are blocked by a feature gate
 		// to restrict the usage to development environments
 		"start-cluster-profiler",

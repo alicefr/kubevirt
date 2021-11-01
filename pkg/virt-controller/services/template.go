@@ -33,6 +33,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/tools/cache"
 
+	"kubevirt.io/kubevirt/pkg/config"
+	"kubevirt.io/kubevirt/pkg/hooks"
 	"kubevirt.io/kubevirt/pkg/virt-controller/watch/topology"
 
 	"kubevirt.io/kubevirt/pkg/downwardmetrics"
@@ -45,9 +47,7 @@ import (
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 	"kubevirt.io/client-go/precond"
-	"kubevirt.io/kubevirt/pkg/config"
 	containerdisk "kubevirt.io/kubevirt/pkg/container-disk"
-	"kubevirt.io/kubevirt/pkg/hooks"
 	"kubevirt.io/kubevirt/pkg/network/istio"
 	"kubevirt.io/kubevirt/pkg/util"
 	"kubevirt.io/kubevirt/pkg/util/hardware"
@@ -115,6 +115,7 @@ type TemplateService interface {
 	RenderHotplugAttachmentPodTemplate(volume []*v1.Volume, ownerPod *k8sv1.Pod, vmi *v1.VirtualMachineInstance, claimMap map[string]*k8sv1.PersistentVolumeClaim, tempPod bool) (*k8sv1.Pod, error)
 	RenderHotplugAttachmentTriggerPodTemplate(volume *v1.Volume, ownerPod *k8sv1.Pod, vmi *v1.VirtualMachineInstance, pvcName string, isBlock bool, tempPod bool) (*k8sv1.Pod, error)
 	RenderLaunchManifestNoVm(*v1.VirtualMachineInstance) (*k8sv1.Pod, error)
+	RenderGuestfsManifest(vmi *v1.VirtualMachineInstance) (*k8sv1.Pod, error)
 	GetLauncherImage() string
 	IsPPC64() bool
 	IsARM64() bool
@@ -1740,6 +1741,11 @@ func (t *templateService) RenderHotplugAttachmentTriggerPodTemplate(volume *v1.V
 	return pod, nil
 }
 
+const (
+	tmpDirVolumeName = "libguestfs-tmp-dir"
+	tmpDirPath       = "/tmp/guestfs"
+)
+
 func getVirtiofsCapabilities() []k8sv1.Capability {
 	return []k8sv1.Capability{
 		"CHOWN",
@@ -2204,4 +2210,388 @@ func checkForKeepLauncherAfterFailure(vmi *v1.VirtualMachineInstance) bool {
 		}
 	}
 	return keepLauncherAfterFailure
+}
+
+func (t *templateService) RenderGuestfsManifest(vmi *v1.VirtualMachineInstance) (*k8sv1.Pod, error) {
+	precond.MustNotBeNil(vmi)
+	domain := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetName())
+	namespace := precond.MustNotBeEmpty(vmi.GetObjectMeta().GetNamespace())
+	nodeSelector := map[string]string{}
+
+	var volumes []k8sv1.Volume
+	var volumeDevices []k8sv1.VolumeDevice
+	var volumeMounts []k8sv1.VolumeMount
+
+	gracePeriodSeconds := v1.DefaultGracePeriodSeconds
+	if vmi.Spec.TerminationGracePeriodSeconds != nil {
+		gracePeriodSeconds = *vmi.Spec.TerminationGracePeriodSeconds
+	}
+
+	serviceAccountName := ""
+
+	for _, volume := range vmi.Spec.Volumes {
+		if volume.PersistentVolumeClaim != nil {
+			claimName := volume.PersistentVolumeClaim.ClaimName
+			if err := t.addPVCToLaunchManifest(volume, claimName, namespace, &volumeMounts, &volumeDevices); err != nil {
+				return nil, err
+			}
+			volumes = append(volumes, k8sv1.Volume{
+				Name: volume.Name,
+				VolumeSource: k8sv1.VolumeSource{
+					PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
+						ClaimName: volume.PersistentVolumeClaim.ClaimName,
+						ReadOnly:  volume.PersistentVolumeClaim.ReadOnly,
+					},
+				},
+			})
+		}
+		if volume.DataVolume != nil {
+			claimName := volume.DataVolume.Name
+			if err := t.addPVCToLaunchManifest(volume, claimName, namespace, &volumeMounts, &volumeDevices); err != nil {
+				return nil, err
+			}
+			volumes = append(volumes, k8sv1.Volume{
+				Name: volume.Name,
+				VolumeSource: k8sv1.VolumeSource{
+					PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
+						ClaimName: claimName,
+					},
+				},
+			})
+		}
+	}
+
+	// Pad the virt-launcher grace period.
+	// Ideally we want virt-handler to handle tearing down
+	// the vmi without virt-launcher's termination forcing
+	// the vmi down.
+	gracePeriodSeconds = gracePeriodSeconds + int64(15)
+	gracePeriodKillAfter := gracePeriodSeconds + int64(15)
+
+	// Get memory overhead
+	memoryOverhead := GetMemoryOverhead(vmi, t.clusterConfig.GetClusterCPUArch())
+
+	// Consider CPU and memory requests and limits for pod scheduling
+	resources := k8sv1.ResourceRequirements{}
+	vmiResources := vmi.Spec.Domain.Resources
+
+	resources.Requests = make(k8sv1.ResourceList)
+	resources.Limits = make(k8sv1.ResourceList)
+
+	// Set Default CPUs request
+	if !vmi.IsCPUDedicated() {
+		vcpus := int64(1)
+		if vmi.Spec.Domain.CPU != nil {
+			vcpus = hardware.GetNumberOfVCPUs(vmi.Spec.Domain.CPU)
+		}
+		cpuAllocationRatio := t.clusterConfig.GetCPUAllocationRatio()
+		if vcpus != 0 && cpuAllocationRatio > 0 {
+			val := float64(vcpus) / float64(cpuAllocationRatio)
+			vcpusStr := fmt.Sprintf("%g", val)
+			if val < 1 {
+				val *= 1000
+				vcpusStr = fmt.Sprintf("%gm", val)
+			}
+			resources.Requests[k8sv1.ResourceCPU] = resource.MustParse(vcpusStr)
+		}
+	}
+	// Copy vmi resources requests to a container
+	for key, value := range vmiResources.Requests {
+		resources.Requests[key] = value
+	}
+
+	// Copy vmi resources limits to a container
+	for key, value := range vmiResources.Limits {
+		resources.Limits[key] = value
+	}
+
+	// Add ephemeral storage request to container to be used by Kubevirt. This amount of ephemeral storage
+	// should be added to the user's request.
+	ephemeralStorageOverhead := resource.MustParse(ephemeralStorageOverheadSize)
+	ephemeralStorageRequested := resources.Requests[k8sv1.ResourceEphemeralStorage]
+	ephemeralStorageRequested.Add(ephemeralStorageOverhead)
+	resources.Requests[k8sv1.ResourceEphemeralStorage] = ephemeralStorageRequested
+
+	if ephemeralStorageLimit, ephemeralStorageLimitDefined := resources.Limits[k8sv1.ResourceEphemeralStorage]; ephemeralStorageLimitDefined {
+		ephemeralStorageLimit.Add(ephemeralStorageOverhead)
+		resources.Limits[k8sv1.ResourceEphemeralStorage] = ephemeralStorageLimit
+	}
+
+	// Consider hugepages resource for pod scheduling
+	if util.HasHugePages(vmi) {
+		hugepageType := k8sv1.ResourceName(k8sv1.ResourceHugePagesPrefix + vmi.Spec.Domain.Memory.Hugepages.PageSize)
+		hugepagesMemReq := vmi.Spec.Domain.Resources.Requests.Memory()
+
+		// If requested, use the guest memory to allocate hugepages
+		if vmi.Spec.Domain.Memory != nil && vmi.Spec.Domain.Memory.Guest != nil {
+			requests := vmi.Spec.Domain.Resources.Requests.Memory().Value()
+			guest := vmi.Spec.Domain.Memory.Guest.Value()
+			if requests > guest {
+				hugepagesMemReq = vmi.Spec.Domain.Memory.Guest
+			}
+		}
+		resources.Requests[hugepageType] = *hugepagesMemReq
+		resources.Limits[hugepageType] = *hugepagesMemReq
+
+		// Configure hugepages mount on a pod
+		volumeMounts = append(volumeMounts, k8sv1.VolumeMount{
+			Name:      "hugepages",
+			MountPath: filepath.Join("/dev/hugepages"),
+		})
+		volumes = append(volumes, k8sv1.Volume{
+			Name: "hugepages",
+			VolumeSource: k8sv1.VolumeSource{
+				EmptyDir: &k8sv1.EmptyDirVolumeSource{
+					Medium: k8sv1.StorageMediumHugePages,
+				},
+			},
+		})
+
+		reqMemDiff := resource.NewScaledQuantity(0, resource.Kilo)
+		limMemDiff := resource.NewScaledQuantity(0, resource.Kilo)
+		// In case the guest memory and the requested memeory are different, add the difference
+		// to the to the overhead
+		if vmi.Spec.Domain.Memory != nil && vmi.Spec.Domain.Memory.Guest != nil {
+			requests := vmi.Spec.Domain.Resources.Requests.Memory().Value()
+			limits := vmi.Spec.Domain.Resources.Limits.Memory().Value()
+			guest := vmi.Spec.Domain.Memory.Guest.Value()
+			if requests > guest {
+				reqMemDiff.Add(*vmi.Spec.Domain.Resources.Requests.Memory())
+				reqMemDiff.Sub(*vmi.Spec.Domain.Memory.Guest)
+			}
+			if limits > guest {
+				limMemDiff.Add(*vmi.Spec.Domain.Resources.Limits.Memory())
+				limMemDiff.Sub(*vmi.Spec.Domain.Memory.Guest)
+			}
+		}
+		// Set requested memory equals to overhead memory
+		reqMemDiff.Add(*memoryOverhead)
+		resources.Requests[k8sv1.ResourceMemory] = *reqMemDiff
+		if _, ok := resources.Limits[k8sv1.ResourceMemory]; ok {
+			limMemDiff.Add(*memoryOverhead)
+			resources.Limits[k8sv1.ResourceMemory] = *limMemDiff
+		}
+	} else {
+		// Add overhead memory
+		memoryRequest := resources.Requests[k8sv1.ResourceMemory]
+		if !vmi.Spec.Domain.Resources.OvercommitGuestOverhead {
+			memoryRequest.Add(*memoryOverhead)
+		}
+		resources.Requests[k8sv1.ResourceMemory] = memoryRequest
+
+		if memoryLimit, ok := resources.Limits[k8sv1.ResourceMemory]; ok {
+			memoryLimit.Add(*memoryOverhead)
+			resources.Limits[k8sv1.ResourceMemory] = memoryLimit
+		}
+	}
+
+	// Handle CPU pinning
+	if vmi.IsCPUDedicated() {
+		// schedule only on nodes with a running cpu manager
+		nodeSelector[v1.CPUManager] = "true"
+
+		vcpus := hardware.GetNumberOfVCPUs(vmi.Spec.Domain.CPU)
+
+		if vcpus != 0 {
+			resources.Limits[k8sv1.ResourceCPU] = *resource.NewQuantity(vcpus, resource.BinarySI)
+		} else {
+			if cpuLimit, ok := resources.Limits[k8sv1.ResourceCPU]; ok {
+				resources.Requests[k8sv1.ResourceCPU] = cpuLimit
+			} else if cpuRequest, ok := resources.Requests[k8sv1.ResourceCPU]; ok {
+				resources.Limits[k8sv1.ResourceCPU] = cpuRequest
+			}
+		}
+		// allocate 1 more pcpu if IsolateEmulatorThread request
+		if vmi.Spec.Domain.CPU.IsolateEmulatorThread {
+			emulatorThreadCPU := resource.NewQuantity(1, resource.BinarySI)
+			limits := resources.Limits[k8sv1.ResourceCPU]
+			limits.Add(*emulatorThreadCPU)
+			resources.Limits[k8sv1.ResourceCPU] = limits
+			if cpuRequest, ok := resources.Requests[k8sv1.ResourceCPU]; ok {
+				cpuRequest.Add(*emulatorThreadCPU)
+				resources.Requests[k8sv1.ResourceCPU] = cpuRequest
+			}
+		}
+
+		resources.Limits[k8sv1.ResourceMemory] = *resources.Requests.Memory()
+	}
+
+	allowEmulation := t.clusterConfig.AllowEmulation()
+	imagePullPolicy := t.clusterConfig.GetImagePullPolicy()
+
+	if resources.Limits == nil {
+		resources.Limits = make(k8sv1.ResourceList)
+	}
+
+	extraResources := getRequiredResources(vmi, allowEmulation)
+	for key, val := range extraResources {
+		resources.Limits[key] = val
+	}
+
+	if !allowEmulation {
+		resources.Limits[KvmDevice] = resource.MustParse("1")
+	}
+
+	for k, v := range vmi.Spec.NodeSelector {
+		nodeSelector[k] = v
+
+	}
+	if t.clusterConfig.CPUNodeDiscoveryEnabled() {
+		if cpuModelLabel, err := CPUModelLabelFromCPUModel(vmi); err == nil {
+			if vmi.Spec.Domain.CPU.Model != v1.CPUModeHostModel && vmi.Spec.Domain.CPU.Model != v1.CPUModeHostPassthrough {
+				nodeSelector[cpuModelLabel] = "true"
+			}
+		}
+		for _, cpuFeatureLable := range CPUFeatureLabelsFromCPUFeatures(vmi) {
+			nodeSelector[cpuFeatureLable] = "true"
+		}
+	}
+	if t.clusterConfig.HypervStrictCheckEnabled() {
+		hvNodeSelectors := getHypervNodeSelectors(vmi)
+		for k, v := range hvNodeSelectors {
+			nodeSelector[k] = v
+		}
+	}
+
+	if vmi.Status.TopologyHints != nil {
+		if vmi.Status.TopologyHints.TSCFrequency != nil {
+			nodeSelector[topology.ToTSCSchedulableLabel(*vmi.Status.TopologyHints.TSCFrequency)] = "true"
+		}
+	}
+
+	nodeSelector[v1.NodeSchedulable] = "true"
+	nodeSelectors := t.clusterConfig.GetNodeSelectors()
+	for k, v := range nodeSelectors {
+		nodeSelector[k] = v
+	}
+
+	podLabels := map[string]string{}
+
+	for k, v := range vmi.Labels {
+		podLabels[k] = v
+	}
+	podLabels[v1.AppLabel] = "guestfs"
+	podLabels[v1.CreatedByLabel] = string(vmi.UID)
+
+	podAnnotations, err := generatePodAnnotations(vmi)
+	if err != nil {
+		return nil, err
+	}
+	var user, group int64
+	user = 0
+	group = 0
+	pod := k8sv1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			GenerateName: "guestfs-" + domain + "-",
+			Labels:       podLabels,
+			Annotations:  podAnnotations,
+			OwnerReferences: []metav1.OwnerReference{
+				*metav1.NewControllerRef(vmi, v1.VirtualMachineInstanceGroupVersionKind),
+			},
+		},
+		Spec: k8sv1.PodSpec{
+			Volumes: []k8sv1.Volume{
+				// Use emptyDir to store temporary files generated by libguestfs
+				{
+					Name: tmpDirVolumeName,
+					VolumeSource: k8sv1.VolumeSource{
+						EmptyDir: &k8sv1.EmptyDirVolumeSource{},
+					},
+				},
+			},
+			Containers: []k8sv1.Container{
+				{
+					Name: "guestfs",
+					// TODO afrosi fetch image
+					Image:   "registry:5000/kubevirt/libguestfs-tools:devel",
+					Command: []string{"/entrypoint.sh"},
+					Args:    []string{},
+					// Set env variable to start libguestfs:
+					// LIBGUESTFS_BACKEND sets libguestfs to directly use qemu
+					// LIBGUESTFS_PATH sets the path where the root, initrd and the kernel are located
+					// LIBGUESTFS_TMPDIR sets the path where temporary files generated by libguestfs are stored
+					Env: []k8sv1.EnvVar{
+						{
+							Name:  "LIBGUESTFS_BACKEND",
+							Value: "direct",
+						},
+						{
+							Name:  "LIBGUESTFS_PATH",
+							Value: "/usr/local/lib/guestfs/appliance",
+						},
+						{
+							Name:  "LIBGUESTFS_TMPDIR",
+							Value: tmpDirPath,
+						},
+					},
+					VolumeMounts: []k8sv1.VolumeMount{
+						{
+							Name:      tmpDirVolumeName,
+							ReadOnly:  false,
+							MountPath: tmpDirPath,
+						},
+					},
+					ImagePullPolicy: imagePullPolicy,
+					SecurityContext: &k8sv1.SecurityContext{
+						RunAsUser:  &user,
+						RunAsGroup: &group,
+					},
+					Stdin:     true,
+					TTY:       true,
+					Resources: resources,
+				},
+			},
+			TerminationGracePeriodSeconds: &gracePeriodKillAfter,
+			RestartPolicy:                 k8sv1.RestartPolicyNever,
+			NodeSelector:                  nodeSelector,
+		},
+	}
+	pod.Spec.Containers[0].VolumeDevices = append(pod.Spec.Containers[0].VolumeDevices, volumeDevices...)
+	pod.Spec.Containers[0].VolumeMounts = append(pod.Spec.Containers[0].VolumeMounts, volumeMounts...)
+	pod.Spec.Volumes = append(pod.Spec.Volumes, volumes...)
+
+	// If an SELinux type was specified, use that--otherwise don't set an SELinux type
+	selinuxType := t.clusterConfig.GetSELinuxLauncherType()
+	if selinuxType != "" {
+		alignPodMultiCategorySecurity(&pod, selinuxType)
+	}
+
+	// If we have a runtime class specified, use it, otherwise don't set a runtimeClassName
+	runtimeClassName := t.clusterConfig.GetDefaultRuntimeClass()
+	if runtimeClassName != "" {
+		pod.Spec.RuntimeClassName = &runtimeClassName
+	}
+
+	if vmi.Spec.PriorityClassName != "" {
+		pod.Spec.PriorityClassName = vmi.Spec.PriorityClassName
+	}
+
+	if vmi.Spec.Affinity != nil {
+		pod.Spec.Affinity = vmi.Spec.Affinity.DeepCopy()
+	}
+
+	if t.clusterConfig.CPUNodeDiscoveryEnabled() {
+		SetNodeAffinityForForbiddenFeaturePolicy(vmi, &pod)
+	}
+
+	pod.Spec.Tolerations = vmi.Spec.Tolerations
+
+	pod.Spec.SchedulerName = vmi.Spec.SchedulerName
+
+	enableServiceLinks := false
+	pod.Spec.EnableServiceLinks = &enableServiceLinks
+
+	if len(serviceAccountName) > 0 {
+		pod.Spec.ServiceAccountName = serviceAccountName
+		automount := true
+		pod.Spec.AutomountServiceAccountToken = &automount
+	} else if istio.ProxyInjectionEnabled(vmi) {
+		automount := true
+		pod.Spec.AutomountServiceAccountToken = &automount
+	} else {
+		automount := false
+		pod.Spec.AutomountServiceAccountToken = &automount
+	}
+
+	return &pod, nil
 }

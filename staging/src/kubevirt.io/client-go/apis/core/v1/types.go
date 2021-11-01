@@ -82,7 +82,8 @@ type EvictionStrategy string
 type StartStrategy string
 
 const (
-	StartStrategyPaused StartStrategy = "Paused"
+	StartStrategyPaused      StartStrategy = "Paused"
+	StartStrategyMaintenance StartStrategy = "Maintenance"
 )
 
 // VirtualMachineInstanceSpec is a description of a VirtualMachineInstance.
@@ -1210,6 +1211,8 @@ const (
 	// VMI will initially be running--and restarted if a failure occurs.
 	// It will not be restarted upon successful completion.
 	RunStrategyRerunOnFailure VirtualMachineRunStrategy = "RerunOnFailure"
+
+	RunStrategyMaintenance VirtualMachineRunStrategy = "Maintenance"
 )
 
 // VirtualMachineSpec describes how the proper VirtualMachine
