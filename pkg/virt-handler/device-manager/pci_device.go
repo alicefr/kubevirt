@@ -73,11 +73,10 @@ type PCIDevicePlugin struct {
 func NewPCIDevicePlugin(pciDevices []*PCIDevice, resourceName string) *PCIDevicePlugin {
 	deviceIDStr := strings.Replace(pciDevices[0].pciID, ":", "-", -1)
 	serverSock := SocketPath(deviceIDStr)
-	iommuToPCIMap := make(map[string]string)
 
 	initHandler()
 
-	devs := constructDPIdevices(pciDevices, iommuToPCIMap)
+	devs, iommuToPCIMap := ConstructDPIdevices(pciDevices)
 	dpi := &PCIDevicePlugin{
 		devs:          devs,
 		socketPath:    serverSock,
@@ -94,7 +93,13 @@ func NewPCIDevicePlugin(pciDevices []*PCIDevice, resourceName string) *PCIDevice
 	return dpi
 }
 
-func constructDPIdevices(pciDevices []*PCIDevice, iommuToPCIMap map[string]string) (devs []*pluginapi.Device) {
+func (dpi *PCIDevicePlugin) UpdateDevices(devices []*pluginapi.Device, iommuMap map[string]string) {
+	dpi.devs = devices
+	dpi.iommuToPCIMap = iommuMap
+}
+
+func ConstructDPIdevices(pciDevices []*PCIDevice) (devs []*pluginapi.Device, iommuToPCIMap map[string]string) {
+	iommuToPCIMap = make(map[string]string)
 	for _, pciDevice := range pciDevices {
 		iommuToPCIMap[pciDevice.iommuGroup] = pciDevice.pciAddress
 		dpiDev := &pluginapi.Device{
@@ -387,7 +392,7 @@ func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]string) ma
 			log.DefaultLogger().Reason(err).Errorf("failed get vendor:device ID for device: %s", info.Name())
 			return nil
 		}
-		if _, supported := supportedPCIDeviceMap[pciID]; supported {
+		if resourceName, supported := supportedPCIDeviceMap[pciID]; supported {
 			// check device driver
 			driver, err := Handler.GetDeviceDriver(pciBasePath, info.Name())
 			if err != nil || driver != "vfio-pci" {
@@ -405,7 +410,7 @@ func discoverPermittedHostPCIDevices(supportedPCIDeviceMap map[string]string) ma
 			pcidev.iommuGroup = iommuGroup
 			pcidev.driver = driver
 			pcidev.numaNode = Handler.GetDeviceNumaNode(pciBasePath, info.Name())
-			pciDevicesMap[pciID] = append(pciDevicesMap[pciID], pcidev)
+			pciDevicesMap[resourceName] = append(pciDevicesMap[resourceName], pcidev)
 		}
 		return nil
 	})

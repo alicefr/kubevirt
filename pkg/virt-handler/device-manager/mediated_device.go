@@ -443,3 +443,8 @@ func (dpi *MediatedDevicePlugin) setInitialized(initialized bool) {
 	dpi.initialized = initialized
 	dpi.lock.Unlock()
 }
+
+func (dpi *MediatedDevicePlugin) UpdateDevices(devices []*pluginapi.Device, iommuMap map[string]string) {
+	dpi.devs = devices
+	dpi.iommuToMDEVMap = iommuMap
+}

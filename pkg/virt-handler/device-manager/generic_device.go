@@ -48,6 +48,7 @@ type GenericDevice interface {
 	GetDevicePath() string
 	GetDeviceName() string
 	GetInitialized() bool
+	UpdateDevices([]*pluginapi.Device, map[string]string)
 }
 
 type GenericDevicePlugin struct {
@@ -379,4 +380,8 @@ func (dpi *GenericDevicePlugin) setInitialized(initialized bool) {
 	dpi.lock.Lock()
 	dpi.initialized = initialized
 	dpi.lock.Unlock()
+}
+
+func (dpi *GenericDevicePlugin) UpdateDevices(devices []*pluginapi.Device, _ map[string]string) {
+	dpi.devs = devices
 }
