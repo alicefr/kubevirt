@@ -30,24 +30,25 @@ const (
 	IgnitionGate      = "ExperimentalIgnitionSupport"
 	LiveMigrationGate = "LiveMigration"
 	// SRIOVLiveMigrationGate enable's Live Migration for VM's with SRIOV interfaces.
-	SRIOVLiveMigrationGate     = "SRIOVLiveMigration"
-	CPUNodeDiscoveryGate       = "CPUNodeDiscovery"
-	HypervStrictCheckGate      = "HypervStrictCheck"
-	SidecarGate                = "Sidecar"
-	GPUGate                    = "GPU"
-	HostDevicesGate            = "HostDevices"
-	SnapshotGate               = "Snapshot"
-	VMExportGate               = "VMExport"
-	HotplugVolumesGate         = "HotplugVolumes"
-	HostDiskGate               = "HostDisk"
-	VirtIOFSGate               = "ExperimentalVirtiofsSupport"
-	MacvtapGate                = "Macvtap"
-	PasstGate                  = "Passt"
-	DownwardMetricsFeatureGate = "DownwardMetrics"
-	NonRootDeprecated          = "NonRootExperimental"
-	NonRoot                    = "NonRoot"
-	ClusterProfiler            = "ClusterProfiler"
-	WorkloadEncryptionSEV      = "WorkloadEncryptionSEV"
+	SRIOVLiveMigrationGate      = "SRIOVLiveMigration"
+	CPUNodeDiscoveryGate        = "CPUNodeDiscovery"
+	HypervStrictCheckGate       = "HypervStrictCheck"
+	SidecarGate                 = "Sidecar"
+	GPUGate                     = "GPU"
+	HostDevicesGate             = "HostDevices"
+	SnapshotGate                = "Snapshot"
+	VMExportGate                = "VMExport"
+	HotplugVolumesGate          = "HotplugVolumes"
+	HostDiskGate                = "HostDisk"
+	VirtIOFSGate                = "ExperimentalVirtiofsSupport"
+	MacvtapGate                 = "Macvtap"
+	PasstGate                   = "Passt"
+	DownwardMetricsFeatureGate  = "DownwardMetrics"
+	NonRootDeprecated           = "NonRootExperimental"
+	NonRoot                     = "NonRoot"
+	ClusterProfiler             = "ClusterProfiler"
+	WorkloadEncryptionSEV       = "WorkloadEncryptionSEV"
+	PersistentReservationHelper = "PersistentReservationHelper"
 )
 
 var deprecatedFeatureGates = [...]string{
@@ -165,4 +166,8 @@ func (config *ClusterConfig) ClusterProfilerEnabled() bool {
 
 func (config *ClusterConfig) WorkloadEncryptionSEVEnabled() bool {
 	return config.isFeatureGateEnabled(WorkloadEncryptionSEV)
+}
+
+func (config *ClusterConfig) PersistentReservationHelperEnabled() bool {
+	return config.isFeatureGateEnabled(PersistentReservationHelper)
 }

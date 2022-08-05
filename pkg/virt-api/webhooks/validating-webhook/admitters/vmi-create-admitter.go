@@ -151,6 +151,7 @@ func ValidateVirtualMachineInstanceSpec(field *k8sfield.Path, spec *v1.VirtualMa
 	causes = append(causes, validateRealtime(field, spec)...)
 	causes = append(causes, validateSpecAffinity(field, spec)...)
 	causes = append(causes, validateSpecTopologySpreadConstraints(field, spec)...)
+	causes = append(causes, validatePersistentReservation(field, spec, config)...)
 
 	maxNumberOfInterfacesExceeded := len(spec.Domain.Devices.Interfaces) > arrayLenMax
 	if maxNumberOfInterfacesExceeded {
@@ -870,6 +871,20 @@ func validateLaunchSecurity(field *k8sfield.Path, spec *v1.VirtualMachineInstanc
 					Field:   field.Child("launchSecurity").String(),
 				})
 			}
+		}
+	}
+	return causes
+}
+
+func validatePersistentReservation(field *k8sfield.Path, spec *v1.VirtualMachineInstanceSpec, config *virtconfig.ClusterConfig) (causes []metav1.StatusCause) {
+	for idx, disk := range spec.Domain.Devices.Disks {
+		// Check if PersistentReservation feature gate is enabled
+		if disk.LUN != nil && disk.LUN.Reservation && !config.PersistentReservationHelperEnabled() {
+			causes = append(causes, metav1.StatusCause{
+				Type:    metav1.CauseTypeFieldValueInvalid,
+				Message: "PersistentReservationHelper feature gate is not enabled",
+				Field:   field.Child("domain", "devices", "disks").Index(idx).Child("lun").String(),
+			})
 		}
 	}
 	return causes
