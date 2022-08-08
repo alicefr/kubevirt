@@ -622,7 +622,7 @@ func (l *LibvirtDomainManager) preStartHook(vmi *v1.VirtualMachineInstance, doma
 	expandDiskImagesOffline(vmi, domain)
 
 	if daemons.IsPRHelperNeeded(vmi) {
-		waitSocketToBeMounted(daemons.GetPrHelperSocket())
+		waitSocketToBeMounted(filepath.Join("/var/run/kubevirt/daemons", daemons.PrHelperDir, daemons.PrHelperSocket))
 	}
 	return domain, err
 }

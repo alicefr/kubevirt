@@ -14,7 +14,6 @@ import (
 	"kubevirt.io/kubevirt/pkg/util"
 	"kubevirt.io/kubevirt/pkg/virt-handler/isolation"
 	"kubevirt.io/kubevirt/pkg/virt-handler/selinux"
-	virtchroot "kubevirt.io/kubevirt/pkg/virt-handler/virt-chroot"
 )
 
 type Mounter interface {
@@ -24,34 +23,43 @@ type Mounter interface {
 
 func MountDaemonsSockets(vmi *v1.VirtualMachineInstance) error {
 	var lastError error
-	safeSourceDaemonsPath, err := daemonSourcePRSocketPath()
-	if err != nil {
-		return fmt.Errorf("failed parsing source path:%v", err)
-	}
+
 	// Check if VMI requires persistent reservation
 	if !daemons.IsPRHelperNeeded(vmi) {
 		return nil
 	}
+
+	// Get source path for the pr daemon directory
+	safeSourceDaemonsPath, err := safepath.JoinAndResolveWithRelativeRoot("/", daemons.GetPrHelperSocketDir())
+	if err != nil {
+		return fmt.Errorf("failed parsing source path %s:%v", daemons.GetPrHelperSocketDir(), err)
+	}
+	log.Log.V(1).Infof("XXX Pr helper is needed")
 	if len(vmi.Status.ActivePods) < 1 {
 		return fmt.Errorf("failed bindmount daemons socket dir: no active pods for the vmi %s", vmi.Name)
 	}
 	for uid, _ := range vmi.Status.ActivePods {
-		targetDir, err := daemonSocketDirPath(string(uid))
+		log.Log.V(1).Infof("XXX Active pod")
+		path := filepath.Join("/var/lib/kubelet/pods", string(uid), daemons.SuffixDaemonPath)
+		targetDir, err := safepath.JoinAndResolveWithRelativeRoot("/", path)
 		if err != nil {
-			lastError = wrapError(lastError, fmt.Errorf("failed creating the path for the target dir for pod uid%s:%v", string(uid), err))
+			lastError = wrapError(lastError, fmt.Errorf("failed creating the safe path %s for pod uid%s:%v", path, string(uid), err))
 			continue
 		}
+		// Create the safe path for the pr helper daemon
 		if err := safepath.MkdirAtNoFollow(targetDir, daemons.PrHelperDir, 0755); err != nil {
 			if !os.IsExist(err) {
 				lastError = wrapError(lastError, err)
 				continue
 			}
 		}
+		log.Log.V(1).Infof("XXX mkdir target dir: %v", targetDir)
 		socketDir, err := safepath.JoinNoFollow(targetDir, daemons.PrHelperDir)
 		if err != nil {
 			lastError = wrapError(lastError, fmt.Errorf("failed creating the path for the socket dir for pod uid%s:%v", string(uid), err))
 			continue
 		}
+		log.Log.V(1).Infof("XXX path socket: %v", socketDir.String())
 
 		mounted, err := isolation.IsMounted(socketDir)
 		if err != nil {
@@ -59,13 +67,16 @@ func MountDaemonsSockets(vmi *v1.VirtualMachineInstance) error {
 			continue
 		}
 		if mounted {
+			log.Log.V(1).Infof("socket directory already mounted: %v", socketDir.String())
 			continue
 		}
 
-		out, err := virtchroot.MountChroot(safeSourceDaemonsPath, socketDir, false).CombinedOutput()
+		err = safepath.MountNoFollow(safeSourceDaemonsPath, socketDir, true)
 		if err != nil {
-			lastError = wrapError(lastError, fmt.Errorf("failed bindmount daemons socket dir: %v: %v", string(out), err))
+			lastError = wrapError(lastError, fmt.Errorf("failed bindmount daemons socket dir %s to %s: %v", safeSourceDaemonsPath.String(), socketDir.String(), err))
 		}
+		log.Log.V(1).Infof("mounted: %s to %s", safeSourceDaemonsPath.String(), socketDir.String())
+		log.Log.V(1).Infof("XXX relabelled: %s", socketDir.String())
 		// Change ownership to the directory and relabel
 		err = changeOwnershipAndRelabel(socketDir)
 		if err != nil {
@@ -97,52 +108,28 @@ func UmountDaemonsSocket(vmi *v1.VirtualMachineInstance) error {
 		return nil
 	}
 	for uid, _ := range vmi.Status.ActivePods {
-		socketDir, err := daemonPRSocketDirPath(string(uid))
+		socketDir, err := safepath.NewPathNoFollow(filepath.Join(util.KubeletPodsDir, string(uid), daemons.SuffixDaemonPath))
 		if err != nil {
 			lastError = wrapError(lastError, fmt.Errorf("failed creating the path for the socket dir for pod uid%s:%v", string(uid), err))
 			continue
 		}
-		mounted, err := isolation.IsMounted(socketDir)
+		socket, err := safepath.JoinNoFollow(socketDir, daemons.PrHelperSocket)
 		if err != nil {
+			lastError = wrapError(lastError, fmt.Errorf("failed creating socket path: %v", err))
+			continue
+		}
+		if err := safepath.UnlinkAtNoFollow(socket); err != nil {
 			lastError = wrapError(lastError, err)
-			continue
 		}
-		if !mounted {
-			continue
-		}
-		out, err := virtchroot.UmountChroot(socketDir).CombinedOutput()
+		err = safepath.UnmountNoFollow(socketDir)
 		if err != nil {
-			lastError = wrapError(lastError, fmt.Errorf("failed unmount daemons socket dir: %v: %v", string(out), err))
+			lastError = wrapError(lastError, fmt.Errorf("failed unmount daemons socket dir: %v", err))
 		}
 		if err := safepath.UnlinkAtNoFollow(socketDir); err != nil {
 			lastError = wrapError(lastError, err)
 		}
 	}
 	return lastError
-}
-
-func daemonSocketDirPath(podUID string) (*safepath.Path, error) {
-	path, err := safepath.NewPathNoFollow(filepath.Join(util.KubeletPodsDir, podUID, daemons.SuffixDaemonPath))
-	if err != nil {
-		return nil, err
-	}
-	return path, nil
-}
-
-func daemonPRSocketDirPath(podUID string) (*safepath.Path, error) {
-	path, err := safepath.NewPathNoFollow(filepath.Join(util.KubeletPodsDir, podUID, daemons.SuffixDaemonPath, daemons.PrHelperDir))
-	if err != nil {
-		return nil, err
-	}
-	return path, nil
-}
-
-func daemonSourcePRSocketPath() (*safepath.Path, error) {
-	path, err := safepath.NewPathNoFollow(daemons.GetPrHelperSocketDir())
-	if err != nil {
-		return nil, err
-	}
-	return path, nil
 }
 
 func wrapError(lastError, err error) error {
