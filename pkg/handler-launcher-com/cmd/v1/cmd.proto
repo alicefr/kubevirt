@@ -89,6 +89,7 @@ message VirtualMachineOptions {
   Topology topology = 4;
   map<string, DiskInfo> DisksInfo = 5;
   bool ExpandDisksEnabled = 6;
+  bool PRHelperEnabled = 7;
 }
 
 message VMIRequest {
