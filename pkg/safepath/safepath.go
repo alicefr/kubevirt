@@ -431,3 +431,17 @@ func ListenUnixNoFollow(socketDir *Path, socketName string) (net.Listener, error
 	}
 	return listener, nil
 }
+
+func MountNoFollow(sourcePath, targetPath *Path, ro bool) error {
+	mntOpts := syscall.MS_BIND
+	if ro {
+		mntOpts |= syscall.MS_RDONLY
+	}
+	source := unsafepath.UnsafeAbsolute(sourcePath.Raw())
+	target := unsafepath.UnsafeAbsolute(targetPath.Raw())
+	return syscall.Mount(source, target, "", uintptr(mntOpts), "")
+}
+
+func UnmountNoFollow(path *Path) error {
+	return syscall.Unmount(unsafepath.UnsafeAbsolute(path.Raw()), 0)
+}
