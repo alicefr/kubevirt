@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/sys/unix"
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/log"
 
@@ -68,14 +69,14 @@ func MountDaemonsSockets(vmi *v1.VirtualMachineInstance) error {
 		}
 		if mounted {
 			log.Log.V(1).Infof("socket directory already mounted: %v", socketDir.String())
-			continue
+		} else {
+			err = safepath.MountNoFollow(safeSourceDaemonsPath, socketDir, true)
+			if err != nil {
+				lastError = wrapError(lastError, fmt.Errorf("failed bindmount daemons socket dir %s to %s: %v", safeSourceDaemonsPath.String(), socketDir.String(), err))
+			}
+			log.Log.V(1).Infof("mounted: %s to %s", safeSourceDaemonsPath.String(), socketDir.String())
 		}
 
-		err = safepath.MountNoFollow(safeSourceDaemonsPath, socketDir, true)
-		if err != nil {
-			lastError = wrapError(lastError, fmt.Errorf("failed bindmount daemons socket dir %s to %s: %v", safeSourceDaemonsPath.String(), socketDir.String(), err))
-		}
-		log.Log.V(1).Infof("mounted: %s to %s", safeSourceDaemonsPath.String(), socketDir.String())
 		log.Log.V(1).Infof("XXX relabelled: %s", socketDir.String())
 		// Change ownership to the directory and relabel
 		err = changeOwnershipAndRelabel(socketDir)
@@ -93,7 +94,6 @@ func MountDaemonsSockets(vmi *v1.VirtualMachineInstance) error {
 		err = changeOwnershipAndRelabel(socket)
 		if err != nil {
 			lastError = wrapError(lastError, fmt.Errorf("failed relabeling socket: %s: %v", socket.String(), err))
-			lastError = wrapError(lastError, err)
 			continue
 		}
 		log.Log.V(1).Infof("mounted daemon socket: %s", socket.String())
@@ -152,15 +152,26 @@ func changeOwnershipAndRelabel(path *safepath.Path) error {
 	if err != nil {
 		return err
 	}
+	label := "system_u:object_r:container_file_t:s0"
 
 	seLinux, selinuxEnabled, err := selinux.NewSELinux()
 	if err == nil && selinuxEnabled {
-		unprivilegedContainerSELinuxLabel := "system_u:object_r:container_file_t:s0"
-		err = selinux.RelabelFiles(unprivilegedContainerSELinuxLabel, seLinux.IsPermissive(), path)
+		currentFileLabel, err := selinux.FileLabel(filePath)
 		if err != nil {
-			return (fmt.Errorf("error relabeling %s: %v", path, err))
+			return fmt.Errorf("could not retrieve label of file %s. Reason: %v", filePath, err)
 		}
 
+		writeableFD, err := os.OpenFile(filePath, os.O_APPEND|unix.S_IWRITE, os.ModePerm)
+		if err != nil {
+			return fmt.Errorf("error reopening file %s to write label %s. Reason: %v", filePath, label, err)
+		}
+		defer writeableFD.Close()
+
+		if currentFileLabel != label {
+			if err := unix.Fsetxattr(int(writeableFD.Fd()), "security.selinux", []byte(label), 0); err != nil {
+				return fmt.Errorf("error relabeling file %s with label %s. Reason: %v", filePath, label, err)
+			}
+		}
 	}
 	return err
 }

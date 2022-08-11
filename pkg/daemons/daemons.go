@@ -38,7 +38,7 @@ func RenderPrHelperContainer() k8sv1.Container {
 		Image:   "registry:5000/kubevirt/pr-helper:devel",
 		Command: []string{"/usr/bin/qemu-pr-helper"},
 		Args: []string{
-			"-k", GetPrHelperSocket(),
+			"-k", GetPrHelperSocket(), "-f",
 		},
 		VolumeMounts: []k8sv1.VolumeMount{
 			{
