@@ -108,13 +108,21 @@ func UmountDaemonsSocket(vmi *v1.VirtualMachineInstance) error {
 		return nil
 	}
 	for uid, _ := range vmi.Status.ActivePods {
-		socketDir, err := safepath.NewPathNoFollow(filepath.Join(util.KubeletPodsDir, string(uid), daemons.SuffixDaemonPath))
+		socketDir, err := safepath.NewPathNoFollow(filepath.Join(util.KubeletPodsDir, string(uid), daemons.SuffixDaemonPath, daemons.PrHelperDir))
 		if err != nil {
 			lastError = wrapError(lastError, fmt.Errorf("failed creating the path for the socket dir for pod uid%s:%v", string(uid), err))
 			continue
 		}
+		// If the path doesn't exist it has already been deleted
+		if _, err := safepath.StatAtNoFollow(socketDir); !os.IsExist(err) {
+			log.Log.V(1).Infof("%s doesn't exist anymore", socketDir.String())
+			continue
+		}
 		socket, err := safepath.JoinNoFollow(socketDir, daemons.PrHelperSocket)
 		if err != nil {
+			if !os.IsExist(err) {
+				continue
+			}
 			lastError = wrapError(lastError, fmt.Errorf("failed creating socket path: %v", err))
 			continue
 		}
