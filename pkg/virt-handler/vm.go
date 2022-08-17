@@ -36,6 +36,7 @@ import (
 	hotplugdisk "kubevirt.io/kubevirt/pkg/hotplug-disk"
 	"kubevirt.io/kubevirt/pkg/safepath"
 	"kubevirt.io/kubevirt/pkg/virt-handler/cgroup"
+	"kubevirt.io/kubevirt/pkg/virt-handler/mount-manager"
 
 	"kubevirt.io/kubevirt/pkg/config"
 
@@ -62,9 +63,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/util/hardware"
 	"kubevirt.io/kubevirt/pkg/util/migrations"
 
-	container_disk "kubevirt.io/kubevirt/pkg/virt-handler/container-disk"
 	device_manager "kubevirt.io/kubevirt/pkg/virt-handler/device-manager"
-	hotplug_volume "kubevirt.io/kubevirt/pkg/virt-handler/hotplug-disk"
 
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
@@ -200,8 +199,7 @@ func NewController(
 		watchdogTimeoutSeconds:      watchdogTimeoutSeconds,
 		migrationProxy:              migrationProxy,
 		podIsolationDetector:        podIsolationDetector,
-		containerDiskMounter:        container_disk.NewMounter(podIsolationDetector, filepath.Join(virtPrivateDir, "container-disk-mount-state"), clusterConfig),
-		hotplugVolumeMounter:        hotplug_volume.NewVolumeMounter(filepath.Join(virtPrivateDir, "hotplug-volume-mount-state")),
+		mountManager:                mount.NewMounter(virtPrivateDir, podIsolationDetector, clusterConfig),
 		clusterConfig:               clusterConfig,
 		virtLauncherFSRunDirPattern: "/proc/%d/root/var/run",
 		capabilities:                capabilities,
@@ -272,6 +270,7 @@ type VirtualMachineController struct {
 	migrationIpAddress       string
 	virtShareDir             string
 	virtPrivateDir           string
+	kubeletPodsDir           string
 	Queue                    workqueue.RateLimitingInterface
 	vmiSourceInformer        cache.SharedIndexInformer
 	vmiTargetInformer        cache.SharedIndexInformer
@@ -283,8 +282,7 @@ type VirtualMachineController struct {
 	deviceManagerController  *device_manager.DeviceController
 	migrationProxy           migrationproxy.ProxyManager
 	podIsolationDetector     isolation.PodIsolationDetector
-	containerDiskMounter     container_disk.Mounter
-	hotplugVolumeMounter     hotplug_volume.VolumeMounter
+	mountManager             mount.MountManager
 	clusterConfig            *virtconfig.ClusterConfig
 	sriovHotplugExecutorPool *executor.RateLimitedExecutorPool
 
@@ -776,7 +774,7 @@ func (d *VirtualMachineController) updateHotplugVolumeStatus(vmi *v1.VirtualMach
 	needsRefresh := false
 	if volumeStatus.Target == "" {
 		needsRefresh = true
-		mounted, err := d.hotplugVolumeMounter.IsMounted(vmi, volumeStatus.Name, volumeStatus.HotplugVolume.AttachPodUID)
+		mounted, err := d.mountManager.IsMounted(vmi, volumeStatus.Name, volumeStatus.HotplugVolume.AttachPodUID)
 		if err != nil {
 			log.Log.Object(vmi).Errorf("error occurred while checking if volume is mounted: %v", err)
 		}
@@ -1900,11 +1898,8 @@ func (d *VirtualMachineController) processVmCleanup(vmi *v1.VirtualMachineInstan
 	d.migrationProxy.StopTargetListener(vmiId)
 	d.migrationProxy.StopSourceListener(vmiId)
 
-	// Unmount container disks and clean up remaining files
-	if err := d.containerDiskMounter.Unmount(vmi); err != nil {
-		return err
-	}
-	if err := d.hotplugVolumeMounter.UnmountAll(vmi); err != nil {
+	// Unmount container disks, hotplugged volumes  and clean up remaining files
+	if err := d.mountManager.Unmount(vmi); err != nil {
 		return err
 	}
 
@@ -2496,7 +2491,7 @@ func (d *VirtualMachineController) vmUpdateHelperMigrationTarget(origVMI *v1.Vir
 
 	// give containerDisks some time to become ready before throwing errors on retries
 	info := d.getLauncherClientInfo(vmi)
-	if ready, err := d.containerDiskMounter.ContainerDisksReady(vmi, info.NotInitializedSince); !ready {
+	if ready, err := d.mountManager.MountsReady(vmi, info.NotInitializedSince); !ready {
 		if err != nil {
 			return err
 		}
@@ -2504,17 +2499,10 @@ func (d *VirtualMachineController) vmUpdateHelperMigrationTarget(origVMI *v1.Vir
 		return nil
 	}
 
-	// Mount container disks
-	disksInfo, err := d.containerDiskMounter.MountAndVerify(vmi)
+	// Mount container and hotplugged disks
+	mountInfo, err := d.mountManager.Mount(vmi)
 	if err != nil {
 		return err
-	}
-
-	// Mount hotplug disks
-	if attachmentPodUID := vmi.Status.MigrationState.TargetAttachmentPodUID; attachmentPodUID != types.UID("") {
-		if err := d.hotplugVolumeMounter.MountFromPod(vmi, attachmentPodUID); err != nil {
-			return fmt.Errorf("failed to mount hotplug volumes: %v", err)
-		}
 	}
 
 	// configure network inside virt-launcher compute container
@@ -2552,7 +2540,7 @@ func (d *VirtualMachineController) vmUpdateHelperMigrationTarget(origVMI *v1.Vir
 		}
 	}
 
-	options := virtualMachineOptions(nil, 0, nil, d.capabilities, disksInfo, d.clusterConfig.ExpandDisksEnabled())
+	options := virtualMachineOptions(nil, 0, nil, d.capabilities, mountInfo.GetContainerDisksInfo(), d.clusterConfig.ExpandDisksEnabled())
 	if err := client.SyncMigrationTarget(vmi, options); err != nil {
 		return fmt.Errorf("syncing migration target failed: %v", err)
 	}
@@ -2588,7 +2576,7 @@ func (d *VirtualMachineController) vmUpdateHelperDefault(origVMI *v1.VirtualMach
 	if !vmi.IsRunning() && !vmi.IsFinal() {
 		// give containerDisks some time to become ready before throwing errors on retries
 		info := d.getLauncherClientInfo(vmi)
-		if ready, err := d.containerDiskMounter.ContainerDisksReady(vmi, info.NotInitializedSince); !ready {
+		if ready, err := d.mountManager.MountsReady(vmi, info.NotInitializedSince); !ready {
 			if err != nil {
 				return err
 			}
@@ -2596,15 +2584,11 @@ func (d *VirtualMachineController) vmUpdateHelperDefault(origVMI *v1.VirtualMach
 			return nil
 		}
 
-		disksInfo, err = d.containerDiskMounter.MountAndVerify(vmi)
+		mountInfo, err := d.mountManager.Mount(vmi)
 		if err != nil {
 			return err
 		}
-
-		// Try to mount hotplug volume if there is any during startup.
-		if err := d.hotplugVolumeMounter.Mount(vmi); err != nil {
-			return err
-		}
+		disksInfo = mountInfo.GetContainerDisksInfo()
 
 		if err := d.setupNetwork(vmi); err != nil {
 			return fmt.Errorf("failed to configure vmi network: %w", err)
@@ -2660,7 +2644,7 @@ func (d *VirtualMachineController) vmUpdateHelperDefault(origVMI *v1.VirtualMach
 			log.Log.Object(vmi).Error(err.Error())
 		}
 
-		if err := d.hotplugVolumeMounter.Mount(vmi); err != nil {
+		if err := d.mountManager.SyncMounts(vmi); err != nil {
 			return err
 		}
 
@@ -2689,7 +2673,7 @@ func (d *VirtualMachineController) vmUpdateHelperDefault(origVMI *v1.VirtualMach
 
 	if vmi.IsRunning() {
 		// Umount any disks no longer mounted
-		if err := d.hotplugVolumeMounter.Unmount(vmi); err != nil {
+		if err := d.mountManager.SyncUnmounts(vmi); err != nil {
 			return err
 		}
 	}
