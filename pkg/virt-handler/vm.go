@@ -36,7 +36,7 @@ import (
 	hotplugdisk "kubevirt.io/kubevirt/pkg/hotplug-disk"
 	"kubevirt.io/kubevirt/pkg/safepath"
 	"kubevirt.io/kubevirt/pkg/virt-handler/cgroup"
-	"kubevirt.io/kubevirt/pkg/virt-handler/mount-manager"
+	mount_manager "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager"
 
 	"kubevirt.io/kubevirt/pkg/config"
 
@@ -199,7 +199,7 @@ func NewController(
 		watchdogTimeoutSeconds:      watchdogTimeoutSeconds,
 		migrationProxy:              migrationProxy,
 		podIsolationDetector:        podIsolationDetector,
-		mountManager:                mount.NewMounter(virtPrivateDir, podIsolationDetector, clusterConfig),
+		mountManager:                mount_manager.NewMounter(virtPrivateDir, podIsolationDetector, clusterConfig),
 		clusterConfig:               clusterConfig,
 		virtLauncherFSRunDirPattern: "/proc/%d/root/var/run",
 		capabilities:                capabilities,
@@ -282,7 +282,7 @@ type VirtualMachineController struct {
 	deviceManagerController  *device_manager.DeviceController
 	migrationProxy           migrationproxy.ProxyManager
 	podIsolationDetector     isolation.PodIsolationDetector
-	mountManager             mount.MountManager
+	mountManager             mount_manager.MountManager
 	clusterConfig            *virtconfig.ClusterConfig
 	sriovHotplugExecutorPool *executor.RateLimitedExecutorPool
 
