@@ -40,7 +40,6 @@ import (
 	"kubevirt.io/kubevirt/pkg/safepath"
 	"kubevirt.io/kubevirt/pkg/virt-controller/services"
 	"kubevirt.io/kubevirt/pkg/virt-handler/cgroup"
-	"kubevirt.io/kubevirt/pkg/virt-handler/mount-manager"
 	mount_manager "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager"
 
 	"kubevirt.io/kubevirt/pkg/config"
@@ -290,7 +289,7 @@ type VirtualMachineController struct {
 	deviceManagerController  *device_manager.DeviceController
 	migrationProxy           migrationproxy.ProxyManager
 	podIsolationDetector     isolation.PodIsolationDetector
-	mountManager             mount.MountManager
+	mountManager             mount_manager.MountManager
 	clusterConfig            *virtconfig.ClusterConfig
 	sriovHotplugExecutorPool *executor.RateLimitedExecutorPool
 
