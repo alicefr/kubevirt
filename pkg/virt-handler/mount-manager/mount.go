@@ -13,6 +13,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/virt-handler/isolation"
 	container_disk "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager/container-disk"
 	hotplug_volume "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager/hotplug-disk"
+	mountutils "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager/utils"
 )
 
 //go:generate mockgen -source $GOFILE -package=$GOPACKAGE -destination=generated_mock_$GOFILE
