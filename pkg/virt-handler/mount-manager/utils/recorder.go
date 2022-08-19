@@ -124,6 +124,9 @@ func (m *mounter) GetContainerDisksMountRecord(vmi *v1.VirtualMachineInstance) (
 	if record == nil {
 		return []MountTargetEntry{}, nil
 	}
+	if record == nil {
+		return []ContainerDisksMountTargetEntry{}, nil
+	}
 	return record.GetContainerDisks(), nil
 }
 
@@ -134,6 +137,9 @@ func (m *mounter) GetHotpluggedVolumesMountRecord(vmi *v1.VirtualMachineInstance
 	}
 	if record == nil {
 		return []MountTargetEntry{}, nil
+	}
+	if record == nil {
+		return []HotpluggedDisksMountTargetEntry{}, nil
 	}
 	return record.GetHotpluggedVolumes(), nil
 }
@@ -230,7 +236,6 @@ func (m *mounter) getMountTargetRecord(vmi *v1.VirtualMachineInstance) (*VMIMoun
 		if err != nil {
 			return nil, err
 		}
-
 		// XXX: backward compatibility for old unresolved paths, can be removed in July 2023
 		// After a one-time convert and persist, old records are safe too.
 		if !record.UsesSafePaths {
