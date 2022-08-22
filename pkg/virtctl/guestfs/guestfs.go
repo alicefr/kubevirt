@@ -376,15 +376,14 @@ func createLibguestfsPod(pvc, image, cmd string, args []string, kvm, isBlock boo
 		}
 	}
 	nonRoot := true
-	var uidRoot int64 = 0
-	var uid *int64
+	var uid int64 = 1000
 	if root {
 		nonRoot = false
-		uid = &uidRoot
+		uid = 0
 	}
 	securityContext := &corev1.PodSecurityContext{
 		RunAsNonRoot: &nonRoot,
-		RunAsUser:    uid,
+		RunAsUser:    &uid,
 	}
 
 	c := &corev1.Pod{
