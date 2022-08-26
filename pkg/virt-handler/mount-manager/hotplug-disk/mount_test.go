@@ -20,7 +20,6 @@
 package hotplug_volume
 
 import (
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"io/ioutil"
@@ -42,7 +41,6 @@ import (
 	"kubevirt.io/client-go/api"
 
 	k8sv1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/equality"
 	"k8s.io/apimachinery/pkg/types"
 
 	v1 "kubevirt.io/api/core/v1"
@@ -55,6 +53,7 @@ import (
 
 	diskutils "kubevirt.io/kubevirt/pkg/ephemeral-disk-utils"
 	"kubevirt.io/kubevirt/pkg/virt-handler/isolation"
+	mountutils "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager/utils"
 )
 
 const (
@@ -144,119 +143,17 @@ var _ = Describe("HotplugVolume", func() {
 		}
 	})
 
-	Context("mount target records", func() {
-		var (
-			m      *volumeMounter
-			err    error
-			vmi    *v1.VirtualMachineInstance
-			record *vmiMountTargetRecord
-		)
-
-		BeforeEach(func() {
-			tempDir, err = ioutil.TempDir("", "hotplug-volume-test")
-			Expect(err).ToNot(HaveOccurred())
-			tmpDirSafe, err = safepath.JoinAndResolveWithRelativeRoot(tempDir)
-			Expect(err).ToNot(HaveOccurred())
-			vmi = api.NewMinimalVMI("fake-vmi")
-			vmi.UID = "1234"
-
-			m = &volumeMounter{
-				mountRecords:       make(map[types.UID]*vmiMountTargetRecord),
-				mountStateDir:      tempDir,
-				hotplugDiskManager: hotplugdisk.NewHotplugDiskWithOptions(tempDir),
-			}
-			record = &vmiMountTargetRecord{
-				MountTargetEntries: []vmiMountTargetEntry{
-					{
-						TargetFile: filepath.Join(tempDir, "test"),
-					},
-				},
-			}
-			err := m.setMountTargetRecord(vmi, record)
-			Expect(err).ToNot(HaveOccurred())
-			expectedBytes, err := json.Marshal(record)
-			Expect(err).ToNot(HaveOccurred())
-			bytes, err := ioutil.ReadFile(filepath.Join(tempDir, string(vmi.UID)))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(bytes).To(Equal(expectedBytes))
-		})
-
-		AfterEach(func() {
-			_ = os.RemoveAll(tempDir)
-		})
-
-		It("setMountTargetRecord should fail if vmi.UID is empty", func() {
-			vmi.UID = ""
-			record := &vmiMountTargetRecord{
-				MountTargetEntries: []vmiMountTargetEntry{
-					{
-						TargetFile: filepath.Join(tempDir, "test"),
-					},
-				},
-			}
-			err := m.setMountTargetRecord(vmi, record)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("getMountTargetRecord should get record from file if not in cache", func() {
-			res, err := m.getMountTargetRecord(vmi)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(equality.Semantic.DeepEqual(*res, *record)).To(BeTrue())
-		})
-
-		It("getMountTargetRecord should get record from cache if in cache", func() {
-			cacheRecord := &vmiMountTargetRecord{
-				MountTargetEntries: []vmiMountTargetEntry{
-					{
-						TargetFile: "test2",
-					},
-				},
-			}
-			m.mountRecords[vmi.UID] = cacheRecord
-			res, err := m.getMountTargetRecord(vmi)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(equality.Semantic.DeepEqual(*res, *cacheRecord)).To(BeTrue())
-		})
-
-		It("getMountTargetRecord should error if vmi UID is empty", func() {
-			vmi.UID = ""
-			_, err := m.getMountTargetRecord(vmi)
-			Expect(err).To(HaveOccurred())
-		})
-
-		It("getMountTargetRecord should return nil not in cache and nothing stored in file", func() {
-			err := m.deleteMountTargetRecord(vmi)
-			Expect(err).ToNot(HaveOccurred())
-			res, err := m.getMountTargetRecord(vmi)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(res).To(Equal(&vmiMountTargetRecord{UsesSafePaths: true}))
-		})
-
-		It("deleteMountTargetRecord should remove both record file and entry file", func() {
-			err := ioutil.WriteFile(filepath.Join(tempDir, "test"), []byte("test"), 0644)
-			Expect(err).ToNot(HaveOccurred())
-			err = m.deleteMountTargetRecord(vmi)
-			Expect(err).ToNot(HaveOccurred())
-			recordFile := filepath.Join(tempDir, string(vmi.UID))
-			_, err = os.Stat(recordFile)
-			Expect(err).To(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "test"))
-			Expect(err).To(HaveOccurred())
-		})
-	})
-
 	Context("block devices", func() {
 		var (
 			m             *volumeMounter
 			err           error
 			vmi           *v1.VirtualMachineInstance
-			record        *vmiMountTargetRecord
+			record        []mountutils.HotpluggedDisksMountTargetEntry
 			targetPodPath string
 		)
 
 		BeforeEach(func() {
-			tempDir, err = ioutil.TempDir("", "hotplug-volume-test")
-			Expect(err).ToNot(HaveOccurred())
+			tempDir = GinkgoT().TempDir()
 			tmpDirSafe, err = safepath.JoinAndResolveWithRelativeRoot(tempDir)
 			Expect(err).ToNot(HaveOccurred())
 			vmi = api.NewMinimalVMI("fake-vmi")
@@ -269,11 +166,9 @@ var _ = Describe("HotplugVolume", func() {
 			err = os.MkdirAll(targetPodPath, 0755)
 			Expect(err).ToNot(HaveOccurred())
 
-			record = &vmiMountTargetRecord{}
+			record = []mountutils.HotpluggedDisksMountTargetEntry{}
 
 			m = &volumeMounter{
-				mountRecords:       make(map[types.UID]*vmiMountTargetRecord),
-				mountStateDir:      tempDir,
 				skipSafetyCheck:    true,
 				hotplugDiskManager: hotplugdisk.NewHotplugDiskWithOptions(tempDir),
 				ownershipManager:   ownershipManager,
@@ -289,7 +184,6 @@ var _ = Describe("HotplugVolume", func() {
 		})
 
 		AfterEach(func() {
-			_ = os.RemoveAll(tempDir)
 			deviceBasePath = orgDeviceBasePath
 			statSourceDevice = orgStatSourceCommand
 			mknodCommand = orgMknodCommand
@@ -511,11 +405,9 @@ var _ = Describe("HotplugVolume", func() {
 
 	Context("filesystem volumes", func() {
 		var (
-			m             *volumeMounter
-			err           error
-			vmi           *v1.VirtualMachineInstance
-			record        *vmiMountTargetRecord
-			targetPodPath *safepath.Path
+			m   *volumeMounter
+			err error
+			vmi *v1.VirtualMachineInstance
 		)
 
 		BeforeEach(func() {
@@ -532,14 +424,8 @@ var _ = Describe("HotplugVolume", func() {
 			activePods["abcd"] = "host"
 			vmi.Status.ActivePods = activePods
 
-			targetPodPath, err = newDir(tempDir, "abcd/volumes/kubernetes.io~empty-dir/hotplug-disks")
-			Expect(err).ToNot(HaveOccurred())
-
-			record = &vmiMountTargetRecord{}
-
 			m = &volumeMounter{
-				mountRecords:       make(map[types.UID]*vmiMountTargetRecord),
-				mountStateDir:      tempDir,
+				mountRecorder:      mountutils.NewMountRecorder(tempDir),
 				hotplugDiskManager: hotplugdisk.NewHotplugDiskWithOptions(tempDir),
 				ownershipManager:   ownershipManager,
 			}
@@ -556,7 +442,6 @@ var _ = Describe("HotplugVolume", func() {
 		})
 
 		AfterEach(func() {
-			_ = os.RemoveAll(tempDir)
 			findMntByVolume = orgFindMntByVolume
 			deviceBasePath = orgDeviceBasePath
 			sourcePodBasePath = orgSourcePodBasePath
@@ -643,46 +528,6 @@ var _ = Describe("HotplugVolume", func() {
 			Expect(unsafepath.UnsafeRelative(res.Raw())).To(Equal(unsafepath.UnsafeAbsolute(expectedPath.Raw())))
 		})
 
-		It("should properly mount and unmount filesystem", func() {
-			sourcePodUID := "ghfjk"
-			path, err := newDir(tempDir, sourcePodUID, "volumes")
-			Expect(err).ToNot(HaveOccurred())
-			sourcePodBasePath = func(podUID types.UID) (*safepath.Path, error) {
-				return path, nil
-			}
-			diskFile, err := newFile(unsafepath.UnsafeAbsolute(path.Raw()), "disk.img")
-			Expect(err).ToNot(HaveOccurred())
-			findMntByVolume = func(volumeName string, pid int) ([]byte, error) {
-				return []byte(fmt.Sprintf(findmntByVolumeRes, "testvolume", unsafepath.UnsafeAbsolute(path.Raw()))), nil
-			}
-			targetFilePath, err := newFile(unsafepath.UnsafeAbsolute(targetPodPath.Raw()), "testvolume.img")
-			Expect(err).ToNot(HaveOccurred())
-			mountCommand = func(sourcePath, targetPath *safepath.Path) ([]byte, error) {
-				Expect(unsafepath.UnsafeRelative(sourcePath.Raw())).To(Equal(unsafepath.UnsafeAbsolute(diskFile.Raw())))
-				Expect(targetPath).To(Equal(targetFilePath))
-				return []byte("Success"), nil
-			}
-			ownershipManager.EXPECT().SetFileOwnership(targetFilePath)
-
-			err = m.mountFileSystemHotplugVolume(vmi, "testvolume", types.UID(sourcePodUID), record, false)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(record.MountTargetEntries).To(HaveLen(1))
-			Expect(record.MountTargetEntries[0].TargetFile).To(Equal(unsafepath.UnsafeAbsolute(targetFilePath.Raw())))
-
-			unmountCommand = func(diskPath *safepath.Path) ([]byte, error) {
-				Expect(targetFilePath).To(Equal(diskPath))
-				return []byte("Success"), nil
-			}
-
-			isMounted = func(diskPath *safepath.Path) (bool, error) {
-				Expect(targetFilePath).To(Equal(diskPath))
-				return true, nil
-			}
-
-			err = m.unmountFileSystemHotplugVolumes(targetFilePath)
-			Expect(err).ToNot(HaveOccurred())
-		})
-
 		It("unmountFileSystemHotplugVolumes should return error if isMounted returns error", func() {
 			testPath, err := newFile(tempDir, "test")
 			Expect(err).ToNot(HaveOccurred())
@@ -728,14 +573,15 @@ var _ = Describe("HotplugVolume", func() {
 	Context("volumes", func() {
 		var (
 			m             *volumeMounter
+			ctrl          *gomock.Controller
+			mockRecorder  *mountutils.MockMountRecorder
 			err           error
 			vmi           *v1.VirtualMachineInstance
 			targetPodPath string
 		)
 
 		BeforeEach(func() {
-			tempDir, err = ioutil.TempDir("", "hotplug-volume-test")
-			Expect(err).ToNot(HaveOccurred())
+			tempDir = GinkgoT().TempDir()
 			tmpDirSafe, err = safepath.JoinAndResolveWithRelativeRoot(tempDir)
 			Expect(err).ToNot(HaveOccurred())
 			vmi = api.NewMinimalVMI("fake-vmi")
@@ -747,14 +593,14 @@ var _ = Describe("HotplugVolume", func() {
 			targetPodPath = filepath.Join(tempDir, "abcd/volumes/kubernetes.io~empty-dir/hotplug-disks")
 			err = os.MkdirAll(targetPodPath, 0755)
 			Expect(err).ToNot(HaveOccurred())
-
+			ctrl = gomock.NewController(GinkgoT())
+			mockRecorder = mountutils.NewMockMountRecorder(ctrl)
 			m = &volumeMounter{
-				mountRecords:       make(map[types.UID]*vmiMountTargetRecord),
-				mountStateDir:      tempDir,
 				skipSafetyCheck:    true,
 				hotplugDiskManager: hotplugdisk.NewHotplugDiskWithOptions(tempDir),
 				ownershipManager:   ownershipManager,
 			}
+			m.mountRecorder = mockRecorder
 
 			deviceBasePath = func(podUID types.UID) (*safepath.Path, error) {
 				return newDir(tempDir, string(podUID), "volumes")
@@ -773,7 +619,6 @@ var _ = Describe("HotplugVolume", func() {
 		})
 
 		AfterEach(func() {
-			_ = os.RemoveAll(tempDir)
 			deviceBasePath = orgDeviceBasePath
 			sourcePodBasePath = orgSourcePodBasePath
 			mountCommand = orgMountCommand
@@ -859,7 +704,6 @@ var _ = Describe("HotplugVolume", func() {
 				return []byte("Success"), nil
 			}
 
-			expectedPaths := []string{targetFilePath, blockVolume}
 			capturedPaths := []string{}
 
 			ownershipManager.EXPECT().SetFileOwnership(gomock.Any()).Times(2).DoAndReturn(func(path *safepath.Path) error {
@@ -867,44 +711,30 @@ var _ = Describe("HotplugVolume", func() {
 				return nil
 			})
 
+			record := []mountutils.HotpluggedDisksMountTargetEntry{
+				{
+					TargetFile: targetFilePath,
+				},
+				{
+					TargetFile: blockVolume,
+				},
+			}
+			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return(record, nil)
+			mockRecorder.EXPECT().SetMountRecordHotpluggedVolumes(gomock.Any(), gomock.Any()).Return(nil).Times(2)
 			err = m.Mount(vmi)
 			Expect(err).ToNot(HaveOccurred())
-			By("Verifying there are 2 records in tempDir/1234")
-			record := &vmiMountTargetRecord{
-				MountTargetEntries: []vmiMountTargetEntry{
-					{
-						TargetFile: targetFilePath,
-					},
-					{
-						TargetFile: blockVolume,
-					},
-				},
-				UsesSafePaths: true,
-			}
-			expectedBytes, err := json.Marshal(record)
-			Expect(err).ToNot(HaveOccurred())
-			bytes, err := ioutil.ReadFile(filepath.Join(tempDir, string(vmi.UID)))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(bytes).To(Equal(expectedBytes))
-			_, err = os.Stat(targetFilePath)
-			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(blockVolume)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(capturedPaths).To(ContainElements(expectedPaths))
 
 			volumeStatuses = make([]v1.VolumeStatus, 0)
 			volumeStatuses = append(volumeStatuses, v1.VolumeStatus{
 				Name: "permanent",
 			})
 			vmi.Status.VolumeStatus = volumeStatuses
+
+			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return(record, nil)
+			mockRecorder.EXPECT().DeleteContainerDisksMountRecord(gomock.Any()).Return(nil)
 			err = m.Unmount(vmi)
+
 			Expect(err).ToNot(HaveOccurred())
-			_, err = ioutil.ReadFile(filepath.Join(tempDir, string(vmi.UID)))
-			Expect(err).To(HaveOccurred(), "record file still exists %s", filepath.Join(tempDir, string(vmi.UID)))
-			_, err = os.Stat(targetFilePath)
-			Expect(err).To(HaveOccurred(), "filesystem volume file still exists %s", targetFilePath)
-			_, err = os.Stat(blockVolume)
-			Expect(err).To(HaveOccurred(), "block device volume still exists %s", blockVolume)
 		})
 
 		It("Should not do anything if vmi has no hotplug volumes", func() {
@@ -913,11 +743,12 @@ var _ = Describe("HotplugVolume", func() {
 				Name: "permanent",
 			})
 			vmi.Status.VolumeStatus = volumeStatuses
+			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return([]mountutils.HotpluggedDisksMountTargetEntry{}, nil)
 			Expect(m.Mount(vmi)).To(Succeed())
 		})
 
 		It("unmountAll should cleanup regardless of vmi volumestatuses", func() {
-			setExpectedCgroupRuns(2)
+			setExpectedCgroupRuns(1)
 
 			sourcePodUID := types.UID("klmno")
 			volumeStatuses := make([]v1.VolumeStatus, 0)
@@ -978,7 +809,6 @@ var _ = Describe("HotplugVolume", func() {
 				return nil
 			}
 
-			blockVolume := filepath.Join(targetPodPath, "blockvolume")
 			targetFilePath := filepath.Join(targetPodPath, "filesystemvolume.img")
 			isBlockDevice = func(path *safepath.Path) (bool, error) {
 				return strings.Contains(unsafepath.UnsafeAbsolute(path.Raw()), "blockvolume"), nil
@@ -989,7 +819,6 @@ var _ = Describe("HotplugVolume", func() {
 				return []byte("Success"), nil
 			}
 
-			expectedPaths := []string{targetFilePath, blockVolume}
 			capturedPaths := []string{}
 
 			ownershipManager.EXPECT().SetFileOwnership(gomock.Any()).Times(2).DoAndReturn(func(path *safepath.Path) error {
@@ -997,38 +826,15 @@ var _ = Describe("HotplugVolume", func() {
 				return nil
 			})
 
+			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return([]mountutils.HotpluggedDisksMountTargetEntry{}, nil)
+			mockRecorder.EXPECT().SetMountRecordHotpluggedVolumes(gomock.Any(), gomock.Any()).Return(nil).Times(2)
 			err = m.Mount(vmi)
 			Expect(err).ToNot(HaveOccurred())
 
-			By("Verifying there are 2 records in tempDir/1234")
-			record := &vmiMountTargetRecord{
-				MountTargetEntries: []vmiMountTargetEntry{
-					{
-						TargetFile: targetFilePath,
-					},
-					{
-						TargetFile: blockVolume,
-					},
-				},
-				UsesSafePaths: true,
-			}
-			expectedBytes, err := json.Marshal(record)
-			Expect(err).ToNot(HaveOccurred())
-			bytes, err := ioutil.ReadFile(filepath.Join(tempDir, string(vmi.UID)))
-			Expect(err).ToNot(HaveOccurred())
-			Expect(bytes).To(Equal(expectedBytes))
-			_, err = os.Stat(targetFilePath)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(capturedPaths).To(ContainElements(expectedPaths))
-
+			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return([]mountutils.HotpluggedDisksMountTargetEntry{}, nil)
+			mockRecorder.EXPECT().DeleteContainerDisksMountRecord(gomock.Any()).Return(nil)
 			err = m.UnmountAll(vmi)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = ioutil.ReadFile(filepath.Join(tempDir, string(vmi.UID)))
-			Expect(err).To(HaveOccurred(), "record file still exists %s", filepath.Join(tempDir, string(vmi.UID)))
-			_, err = os.Stat(targetFilePath)
-			Expect(err).To(HaveOccurred(), "filesystem volume file still exists %s", targetFilePath)
-			_, err = os.Stat(blockVolume)
-			Expect(err).To(HaveOccurred(), "block device volume still exists %s", blockVolume)
 		})
 	})
 
