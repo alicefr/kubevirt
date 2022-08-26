@@ -16,6 +16,8 @@ import (
 	"kubevirt.io/kubevirt/pkg/unsafepath"
 )
 
+//go:generate mockgen -source $GOFILE -package=$GOPACKAGE -destination=generated_mock_$GOFILE
+
 type HotpluggedDisksMountTargetEntry struct {
 	TargetFile string `json:"targetFile"`
 }
