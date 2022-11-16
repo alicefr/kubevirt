@@ -215,7 +215,7 @@ func StatAtNoFollow(path *Path) (os.FileInfo, error) {
 	return os.Stat(pathFd.SafePath())
 }
 
-func ReadDirNoFollow(path *Path) ([]DirEntry, error) {
+func ReadDirNoFollow(path *Path) ([]os.DirEntry, error) {
 	pathFd, err := OpenAtNoFollow(path)
 	if err != nil {
 		return nil, err
