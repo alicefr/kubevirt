@@ -17,19 +17,14 @@ import (
 )
 
 //go:generate mockgen -source $GOFILE -package=$GOPACKAGE -destination=generated_mock_$GOFILE
-
-type HotpluggedDisksMountTargetEntry struct {
+type MountTargetEntry struct {
 	TargetFile string `json:"targetFile"`
-}
-
-type ContainerDisksMountTargetEntry struct {
-	TargetFile string `json:"targetFile"`
-	SocketFile string `json:"socketFile"`
+	SocketFile string `json:"socketFile,omitempty"`
 }
 
 type VMIMountTargetEntry struct {
-	HotpluggedVolumes []HotpluggedDisksMountTargetEntry `json:"hotpluggedDisks"`
-	ContainerDisks    []ContainerDisksMountTargetEntry  `json:"containerDisks"`
+	HotpluggedVolumes []MountTargetEntry `json:"hotpluggedDisks"`
+	ContainerDisks    []MountTargetEntry `json:"containerDisks"`
 }
 
 type VMIMountTargetRecord struct {
@@ -37,11 +32,11 @@ type VMIMountTargetRecord struct {
 	UsesSafePaths      bool                `json:"usesSafePaths"`
 }
 
-func (r *VMIMountTargetRecord) GetContainerDisks() []ContainerDisksMountTargetEntry {
+func (r *VMIMountTargetRecord) GetContainerDisks() []MountTargetEntry {
 	return r.MountTargetEntries.ContainerDisks
 }
 
-func (r *VMIMountTargetRecord) GetHotpluggedVolumes() []HotpluggedDisksMountTargetEntry {
+func (r *VMIMountTargetRecord) GetHotpluggedVolumes() []MountTargetEntry {
 	return r.MountTargetEntries.HotpluggedVolumes
 }
 
@@ -64,11 +59,11 @@ type mounter struct {
 }
 
 type MountRecorder interface {
-	SetAddMountRecordContainerDisk(vmi *v1.VirtualMachineInstance, cdRecord []ContainerDisksMountTargetEntry, addPreviousRules bool) error
+	SetAddMountRecordContainerDisk(vmi *v1.VirtualMachineInstance, cdRecord []MountTargetEntry, addPreviousRules bool) error
 	DeleteContainerDisksMountRecord(vmi *v1.VirtualMachineInstance) error
-	GetContainerDisksMountRecord(vmi *v1.VirtualMachineInstance) ([]ContainerDisksMountTargetEntry, error)
-	SetMountRecordHotpluggedVolumes(vmi *v1.VirtualMachineInstance, hpRecord []HotpluggedDisksMountTargetEntry) error
-	GetHotpluggedVolumesMountRecord(vmi *v1.VirtualMachineInstance) ([]HotpluggedDisksMountTargetEntry, error)
+	GetContainerDisksMountRecord(vmi *v1.VirtualMachineInstance) ([]MountTargetEntry, error)
+	SetMountRecordHotpluggedVolumes(vmi *v1.VirtualMachineInstance, hpRecord []MountTargetEntry) error
+	GetHotpluggedVolumesMountRecord(vmi *v1.VirtualMachineInstance) ([]MountTargetEntry, error)
 	DeleteHotpluggedVolumesMountRecord(vmi *v1.VirtualMachineInstance) error
 }
 
@@ -79,7 +74,7 @@ func NewMountRecorder(mountStateDir string) MountRecorder {
 	}
 }
 
-func (m *mounter) SetAddMountRecordContainerDisk(vmi *v1.VirtualMachineInstance, cdRecord []ContainerDisksMountTargetEntry, addPreviousRules bool) error {
+func (m *mounter) SetAddMountRecordContainerDisk(vmi *v1.VirtualMachineInstance, cdRecord []MountTargetEntry, addPreviousRules bool) error {
 	record, err := m.getMountTargetRecord(vmi)
 	if err != nil {
 		return err
@@ -98,7 +93,7 @@ func (m *mounter) SetAddMountRecordContainerDisk(vmi *v1.VirtualMachineInstance,
 	return m.setMountTargetRecord(vmi, record)
 }
 
-func (m *mounter) SetMountRecordHotpluggedVolumes(vmi *v1.VirtualMachineInstance, hpRecord []HotpluggedDisksMountTargetEntry) error {
+func (m *mounter) SetMountRecordHotpluggedVolumes(vmi *v1.VirtualMachineInstance, hpRecord []MountTargetEntry) error {
 	record, err := m.getMountTargetRecord(vmi)
 	if err != nil {
 		return err
@@ -121,24 +116,24 @@ func (m *mounter) DeleteHotpluggedVolumesMountRecord(vmi *v1.VirtualMachineInsta
 	return m.deleteMountTargetRecord(vmi, HOTPLUGGEDVOLUMES_ENTRY)
 }
 
-func (m *mounter) GetContainerDisksMountRecord(vmi *v1.VirtualMachineInstance) ([]ContainerDisksMountTargetEntry, error) {
+func (m *mounter) GetContainerDisksMountRecord(vmi *v1.VirtualMachineInstance) ([]MountTargetEntry, error) {
 	record, err := m.getMountTargetRecord(vmi)
 	if err != nil {
-		return []ContainerDisksMountTargetEntry{}, err
+		return []MountTargetEntry{}, err
 	}
 	if record == nil {
-		return []ContainerDisksMountTargetEntry{}, nil
+		return []MountTargetEntry{}, nil
 	}
 	return record.GetContainerDisks(), nil
 }
 
-func (m *mounter) GetHotpluggedVolumesMountRecord(vmi *v1.VirtualMachineInstance) ([]HotpluggedDisksMountTargetEntry, error) {
+func (m *mounter) GetHotpluggedVolumesMountRecord(vmi *v1.VirtualMachineInstance) ([]MountTargetEntry, error) {
 	record, err := m.getMountTargetRecord(vmi)
 	if err != nil {
-		return []HotpluggedDisksMountTargetEntry{}, err
+		return []MountTargetEntry{}, err
 	}
 	if record == nil {
-		return []HotpluggedDisksMountTargetEntry{}, nil
+		return []MountTargetEntry{}, nil
 	}
 	return record.GetHotpluggedVolumes(), nil
 }
@@ -167,7 +162,7 @@ func (m *mounter) deleteMountTargetRecord(vmi *v1.VirtualMachineInstance, entry 
 			os.Remove(target.TargetFile)
 			os.Remove(target.SocketFile)
 			if ok {
-				r.MountTargetEntries.ContainerDisks = []ContainerDisksMountTargetEntry{}
+				r.MountTargetEntries.ContainerDisks = []MountTargetEntry{}
 			}
 		}
 		for _, target := range record.MountTargetEntries.HotpluggedVolumes {
@@ -176,7 +171,7 @@ func (m *mounter) deleteMountTargetRecord(vmi *v1.VirtualMachineInstance, entry 
 			}
 			os.Remove(target.TargetFile)
 			if ok {
-				r.MountTargetEntries.HotpluggedVolumes = []HotpluggedDisksMountTargetEntry{}
+				r.MountTargetEntries.HotpluggedVolumes = []MountTargetEntry{}
 			}
 		}
 		if r.IsEmpty() {
