@@ -215,6 +215,15 @@ func StatAtNoFollow(path *Path) (os.FileInfo, error) {
 	return os.Stat(pathFd.SafePath())
 }
 
+func ReadDirNoFollow(path *Path) ([]DirEntry, error) {
+	pathFd, err := OpenAtNoFollow(path)
+	if err != nil {
+		return nil, err
+	}
+	defer pathFd.Close()
+	return os.ReadDir(pathFd.SafePath())
+}
+
 type File struct {
 	fd   int
 	path *Path
