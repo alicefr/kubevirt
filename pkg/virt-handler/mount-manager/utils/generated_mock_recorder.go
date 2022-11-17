@@ -29,7 +29,7 @@ func (_m *MockMountRecorder) EXPECT() *_MockMountRecorderRecorder {
 	return _m.recorder
 }
 
-func (_m *MockMountRecorder) SetAddMountRecordContainerDisk(vmi *v1.VirtualMachineInstance, cdRecord []ContainerDisksMountTargetEntry, addPreviousRules bool) error {
+func (_m *MockMountRecorder) SetAddMountRecordContainerDisk(vmi *v1.VirtualMachineInstance, cdRecord []MountTargetEntry, addPreviousRules bool) error {
 	ret := _m.ctrl.Call(_m, "SetAddMountRecordContainerDisk", vmi, cdRecord, addPreviousRules)
 	ret0, _ := ret[0].(error)
 	return ret0
@@ -49,9 +49,9 @@ func (_mr *_MockMountRecorderRecorder) DeleteContainerDisksMountRecord(arg0 inte
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "DeleteContainerDisksMountRecord", arg0)
 }
 
-func (_m *MockMountRecorder) GetContainerDisksMountRecord(vmi *v1.VirtualMachineInstance) ([]ContainerDisksMountTargetEntry, error) {
+func (_m *MockMountRecorder) GetContainerDisksMountRecord(vmi *v1.VirtualMachineInstance) ([]MountTargetEntry, error) {
 	ret := _m.ctrl.Call(_m, "GetContainerDisksMountRecord", vmi)
-	ret0, _ := ret[0].([]ContainerDisksMountTargetEntry)
+	ret0, _ := ret[0].([]MountTargetEntry)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -60,7 +60,7 @@ func (_mr *_MockMountRecorderRecorder) GetContainerDisksMountRecord(arg0 interfa
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "GetContainerDisksMountRecord", arg0)
 }
 
-func (_m *MockMountRecorder) SetMountRecordHotpluggedVolumes(vmi *v1.VirtualMachineInstance, hpRecord []HotpluggedDisksMountTargetEntry) error {
+func (_m *MockMountRecorder) SetMountRecordHotpluggedVolumes(vmi *v1.VirtualMachineInstance, hpRecord []MountTargetEntry) error {
 	ret := _m.ctrl.Call(_m, "SetMountRecordHotpluggedVolumes", vmi, hpRecord)
 	ret0, _ := ret[0].(error)
 	return ret0
@@ -70,9 +70,9 @@ func (_mr *_MockMountRecorderRecorder) SetMountRecordHotpluggedVolumes(arg0, arg
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "SetMountRecordHotpluggedVolumes", arg0, arg1)
 }
 
-func (_m *MockMountRecorder) GetHotpluggedVolumesMountRecord(vmi *v1.VirtualMachineInstance) ([]HotpluggedDisksMountTargetEntry, error) {
+func (_m *MockMountRecorder) GetHotpluggedVolumesMountRecord(vmi *v1.VirtualMachineInstance) ([]MountTargetEntry, error) {
 	ret := _m.ctrl.Call(_m, "GetHotpluggedVolumesMountRecord", vmi)
-	ret0, _ := ret[0].([]HotpluggedDisksMountTargetEntry)
+	ret0, _ := ret[0].([]MountTargetEntry)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
