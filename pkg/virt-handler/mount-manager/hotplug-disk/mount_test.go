@@ -159,7 +159,7 @@ var _ = Describe("HotplugVolume", func() {
 			m             *volumeMounter
 			err           error
 			vmi           *v1.VirtualMachineInstance
-			record        []mountutils.HotpluggedDisksMountTargetEntry
+			record        []mountutils.MountTargetEntry
 			targetPodPath string
 		)
 
@@ -178,7 +178,7 @@ var _ = Describe("HotplugVolume", func() {
 			err = os.MkdirAll(targetPodPath, 0755)
 			Expect(err).ToNot(HaveOccurred())
 
-			record = []mountutils.HotpluggedDisksMountTargetEntry{}
+			record = []mountutils.MountTargetEntry{}
 
 			m = &volumeMounter{
 				skipSafetyCheck:    true,
@@ -372,7 +372,7 @@ var _ = Describe("HotplugVolume", func() {
 			Expect(err.Error()).To(ContainSubstring("no such file or directory"))
 		})
 
-		FIt("Should attempt to create a block device file if it doesn't exist", func() {
+		It("Should attempt to create a block device file if it doesn't exist", func() {
 			testMajor := uint32(482)
 			testMinor := uint32(64)
 			testPerm := os.FileMode(0664)
@@ -400,7 +400,7 @@ var _ = Describe("HotplugVolume", func() {
 			Expect(err.Error()).To(ContainSubstring("Error creating block file"))
 		})
 
-		FIt("Should not attempt to create a block device file if it exists", func() {
+		It("Should not attempt to create a block device file if it exists", func() {
 			testFile := filepath.Join(tempDir, "testfile")
 			testPerm := os.FileMode(0664)
 			_, err = os.Create(testFile)
@@ -722,7 +722,7 @@ var _ = Describe("HotplugVolume", func() {
 				return nil
 			})
 
-			record := []mountutils.HotpluggedDisksMountTargetEntry{
+			record := []mountutils.MountTargetEntry{
 				{
 					TargetFile: targetFilePath,
 				},
@@ -753,7 +753,7 @@ var _ = Describe("HotplugVolume", func() {
 				Name: "permanent",
 			})
 			vmi.Status.VolumeStatus = volumeStatuses
-			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return([]mountutils.HotpluggedDisksMountTargetEntry{}, nil)
+			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return([]mountutils.MountTargetEntry{}, nil)
 			Expect(m.Mount(vmi)).To(Succeed())
 		})
 
@@ -836,12 +836,12 @@ var _ = Describe("HotplugVolume", func() {
 				return nil
 			})
 
-			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return([]mountutils.HotpluggedDisksMountTargetEntry{}, nil)
+			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return([]mountutils.MountTargetEntry{}, nil)
 			mockRecorder.EXPECT().SetMountRecordHotpluggedVolumes(gomock.Any(), gomock.Any()).Return(nil).Times(2)
 			err = m.Mount(vmi)
 			Expect(err).ToNot(HaveOccurred())
 
-			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return([]mountutils.HotpluggedDisksMountTargetEntry{}, nil)
+			mockRecorder.EXPECT().GetHotpluggedVolumesMountRecord(gomock.Any()).Return([]mountutils.MountTargetEntry{}, nil)
 			mockRecorder.EXPECT().DeleteHotpluggedVolumesMountRecord(gomock.Any()).Return(nil)
 			err = m.UnmountAll(vmi)
 			Expect(err).ToNot(HaveOccurred())
