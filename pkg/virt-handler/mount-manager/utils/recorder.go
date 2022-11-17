@@ -194,6 +194,18 @@ func (m *mounter) deleteMountTargetRecord(vmi *v1.VirtualMachineInstance, entry 
 	return nil
 }
 
+func convert(file string, record interface{}) error {
+	bytes, err := os.ReadFile(file)
+	if err != nil {
+		return err
+	}
+	err = json.Unmarshal(bytes, &record)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func (m *mounter) getMountTargetRecord(vmi *v1.VirtualMachineInstance) (*VMIMountTargetRecord, error) {
 	var ok bool
 	var existingRecord *VMIMountTargetRecord
@@ -222,11 +234,7 @@ func (m *mounter) getMountTargetRecord(vmi *v1.VirtualMachineInstance) (*VMIMoun
 	if exists {
 		record := VMIMountTargetRecord{}
 		// #nosec No risk for path injection. Using static base and cleaned filename
-		bytes, err := os.ReadFile(recordFile)
-		if err != nil {
-			return nil, err
-		}
-		err = json.Unmarshal(bytes, &record)
+		err = convert(recordFile, &record)
 		if err != nil {
 			return nil, err
 		}
@@ -258,32 +266,33 @@ func (m *mounter) getMountTargetRecord(vmi *v1.VirtualMachineInstance) (*VMIMoun
 	return nil, nil
 }
 
-func (m *mounter) setMountTargetRecord(vmi *v1.VirtualMachineInstance, record *VMIMountTargetRecord) error {
-	if string(vmi.UID) == "" {
-		return fmt.Errorf("unable to find mounted directories for vmi without uid")
-	}
-
-	// XXX: backward compatibility for old unresolved paths, can be removed in July 2023
-	// After a one-time convert and persist, old records are safe too.
-	record.UsesSafePaths = true
-
-	recordFile := filepath.Join(m.mountStateDir, string(vmi.UID))
-
-	m.mountRecordsLock.Lock()
-	defer m.mountRecordsLock.Unlock()
-
+func writeVMIMountTargetRecordToFile(file string, record *VMIMountTargetRecord) error {
 	bytes, err := json.Marshal(record)
 	if err != nil {
 		return err
 	}
 
-	err = os.MkdirAll(filepath.Dir(recordFile), 0750)
+	err = os.MkdirAll(filepath.Dir(file), 0750)
 	if err != nil {
 		return err
 	}
 
-	err = ioutil.WriteFile(recordFile, bytes, 0600)
-	if err != nil {
+	return ioutil.WriteFile(file, bytes, 0600)
+}
+
+func (m *mounter) setMountTargetRecord(vmi *v1.VirtualMachineInstance, record *VMIMountTargetRecord) error {
+	if string(vmi.UID) == "" {
+		return fmt.Errorf("unable to find mounted directories for vmi without uid")
+	}
+
+	recordFile := filepath.Join(m.mountStateDir, string(vmi.UID))
+	// XXX: backward compatibility for old unresolved paths, can be removed in July 2023
+	// After a one-time convert and persist, old records are safe too.
+	record.UsesSafePaths = true
+
+	m.mountRecordsLock.Lock()
+	defer m.mountRecordsLock.Unlock()
+	if err := writeVMIMountTargetRecordToFile(recordFile, record); err != nil {
 		return err
 	}
 	m.mountRecords[vmi.UID] = record
