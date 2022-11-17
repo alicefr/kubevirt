@@ -19,7 +19,6 @@ import (
 	storagetypes "kubevirt.io/kubevirt/pkg/storage/types"
 	"kubevirt.io/kubevirt/pkg/virt-handler/cgroup"
 	"kubevirt.io/kubevirt/pkg/virt-handler/isolation"
-	mountutils "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager/utils"
 
 	"github.com/opencontainers/runc/libcontainer/configs"
 
@@ -28,6 +27,8 @@ import (
 
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/log"
+
+	mountutils "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager/utils"
 )
 
 //go:generate mockgen -source $GOFILE -package=$GOPACKAGE -destination=generated_mock_$GOFILE
@@ -163,8 +164,8 @@ func NewVolumeMounter(mountRecorder mountutils.MountRecorder, kubeletPodsDir str
 	}
 }
 
-func (m *volumeMounter) writePathToMountRecord(path string, vmi *v1.VirtualMachineInstance, record []mountutils.HotpluggedDisksMountTargetEntry) error {
-	record = append(record, mountutils.HotpluggedDisksMountTargetEntry{
+func (m *volumeMounter) writePathToMountRecord(path string, vmi *v1.VirtualMachineInstance, record []mountutils.MountTargetEntry) error {
+	record = append(record, mountutils.MountTargetEntry{
 		TargetFile: path,
 	})
 	if err := m.mountRecorder.SetMountRecordHotpluggedVolumes(vmi, record); err != nil {
@@ -173,7 +174,7 @@ func (m *volumeMounter) writePathToMountRecord(path string, vmi *v1.VirtualMachi
 	return nil
 }
 
-func (m *volumeMounter) mountHotplugVolume(vmi *v1.VirtualMachineInstance, volumeName string, sourceUID types.UID, record []mountutils.HotpluggedDisksMountTargetEntry, mountDirectory bool) error {
+func (m *volumeMounter) mountHotplugVolume(vmi *v1.VirtualMachineInstance, volumeName string, sourceUID types.UID, record []mountutils.MountTargetEntry, mountDirectory bool) error {
 	logger := log.DefaultLogger()
 	logger.V(4).Infof("Hotplug check volume name: %s", volumeName)
 	if sourceUID != types.UID("") {
@@ -245,7 +246,7 @@ func (m *volumeMounter) isBlockVolume(vmiStatus *v1.VirtualMachineInstanceStatus
 	return false
 }
 
-func (m *volumeMounter) mountBlockHotplugVolume(vmi *v1.VirtualMachineInstance, volume string, sourceUID types.UID, record []mountutils.HotpluggedDisksMountTargetEntry) error {
+func (m *volumeMounter) mountBlockHotplugVolume(vmi *v1.VirtualMachineInstance, volume string, sourceUID types.UID, record []mountutils.MountTargetEntry) error {
 	virtlauncherUID := m.findVirtlauncherUID(vmi)
 	if virtlauncherUID == "" {
 		// This is not the node the pod is running on.
@@ -380,7 +381,7 @@ func (m *volumeMounter) createBlockDeviceFile(basePath *safepath.Path, deviceNam
 	}
 }
 
-func (m *volumeMounter) mountFileSystemHotplugVolume(vmi *v1.VirtualMachineInstance, volume string, sourceUID types.UID, record []mountutils.HotpluggedDisksMountTargetEntry, mountDirectory bool) error {
+func (m *volumeMounter) mountFileSystemHotplugVolume(vmi *v1.VirtualMachineInstance, volume string, sourceUID types.UID, record []mountutils.MountTargetEntry, mountDirectory bool) error {
 	virtlauncherUID := m.findVirtlauncherUID(vmi)
 	if virtlauncherUID == "" {
 		// This is not the node the pod is running on.
@@ -550,7 +551,7 @@ func (m *volumeMounter) Unmount(vmi *v1.VirtualMachineInstance) error {
 			}
 			currentHotplugPaths[unsafepath.UnsafeAbsolute(path.Raw())] = virtlauncherUID
 		}
-		newRecord := []mountutils.HotpluggedDisksMountTargetEntry{}
+		newRecord := []mountutils.MountTargetEntry{}
 		for _, entry := range record {
 			fd, err := safepath.NewFileNoFollow(entry.TargetFile)
 			if err != nil {
@@ -570,7 +571,7 @@ func (m *volumeMounter) Unmount(vmi *v1.VirtualMachineInstance) error {
 					return err
 				}
 			} else {
-				newRecord = append(newRecord, mountutils.HotpluggedDisksMountTargetEntry{
+				newRecord = append(newRecord, mountutils.MountTargetEntry{
 					TargetFile: unsafepath.UnsafeAbsolute(diskPath.Raw()),
 				})
 			}
