@@ -52,7 +52,7 @@ var _ = Describe("Recorder", func() {
 			vmi.UID = "1234"
 			record = &mountutils.VMIMountTargetRecord{
 				MountTargetEntries: mountutils.VMIMountTargetEntry{
-					HotpluggedVolumes: []mountutils.HotpluggedDisksMountTargetEntry{
+					HotpluggedVolumes: []mountutils.MountTargetEntry{
 						{
 							TargetFile: "/hp/target0",
 						},
@@ -60,7 +60,7 @@ var _ = Describe("Recorder", func() {
 							TargetFile: "/hp/target1",
 						},
 					},
-					ContainerDisks: []mountutils.ContainerDisksMountTargetEntry{
+					ContainerDisks: []mountutils.MountTargetEntry{
 						{
 							TargetFile: "/cd/target0",
 							SocketFile: "/cd/sock0",
@@ -94,7 +94,7 @@ var _ = Describe("Recorder", func() {
 				writeRecordOnFile(string(vmi.UID), record)
 				expectedRecord = record
 			}
-			newRecord := []mountutils.ContainerDisksMountTargetEntry{
+			newRecord := []mountutils.MountTargetEntry{
 				{
 					TargetFile: "/cd/target2",
 					SocketFile: "/cd/sock2",
@@ -124,7 +124,7 @@ var _ = Describe("Recorder", func() {
 				writeRecordOnFile(string(vmi.UID), record)
 				expectedRecord = record
 			}
-			newRecord := []mountutils.HotpluggedDisksMountTargetEntry{
+			newRecord := []mountutils.MountTargetEntry{
 				{
 					TargetFile: "/hp/target2",
 				},
@@ -150,7 +150,7 @@ var _ = Describe("Recorder", func() {
 			vmi.UID = "1234"
 		})
 
-		createContainerDisksTargetFiles := func(cd []mountutils.ContainerDisksMountTargetEntry) {
+		createContainerDisksTargetFiles := func(cd []mountutils.MountTargetEntry) {
 			for _, entry := range cd {
 				file, err := os.Create(entry.TargetFile)
 				Expect(err).ToNot(HaveOccurred())
@@ -161,7 +161,7 @@ var _ = Describe("Recorder", func() {
 			}
 		}
 
-		AreContainerDisksTargetFilesDeleted := func(cd []mountutils.ContainerDisksMountTargetEntry) bool {
+		AreContainerDisksTargetFilesDeleted := func(cd []mountutils.MountTargetEntry) bool {
 			for _, entry := range cd {
 				if _, err := os.Stat(entry.TargetFile); err == nil || !errors.Is(err, os.ErrNotExist) {
 					return false
@@ -178,7 +178,7 @@ var _ = Describe("Recorder", func() {
 			return errors.Is(err, os.ErrNotExist)
 		}
 
-		createHotpluggedVolumesTargetFiles := func(hp []mountutils.HotpluggedDisksMountTargetEntry) {
+		createHotpluggedVolumesTargetFiles := func(hp []mountutils.MountTargetEntry) {
 			for _, entry := range hp {
 				file, err := os.Create(entry.TargetFile)
 				Expect(err).ToNot(HaveOccurred())
@@ -186,7 +186,7 @@ var _ = Describe("Recorder", func() {
 			}
 		}
 
-		areHotpluggedVolumesTargetFilesDeleted := func(hp []mountutils.HotpluggedDisksMountTargetEntry) bool {
+		areHotpluggedVolumesTargetFilesDeleted := func(hp []mountutils.MountTargetEntry) bool {
 			for _, entry := range hp {
 				if _, err := os.Stat(entry.TargetFile); err == nil || !errors.Is(err, os.ErrNotExist) {
 					return false
@@ -196,7 +196,7 @@ var _ = Describe("Recorder", func() {
 		}
 
 		It("Should delete container disks and record entry", func() {
-			cds := []mountutils.ContainerDisksMountTargetEntry{
+			cds := []mountutils.MountTargetEntry{
 				{
 					TargetFile: filepath.Join(tempDir, "target0"),
 					SocketFile: filepath.Join(tempDir, "socket0"),
@@ -222,7 +222,7 @@ var _ = Describe("Recorder", func() {
 		})
 
 		It("Should delete container disks but keep the hotplugged volumes record", func() {
-			cds := []mountutils.ContainerDisksMountTargetEntry{
+			cds := []mountutils.MountTargetEntry{
 				{
 					TargetFile: filepath.Join(tempDir, "cd-target0"),
 					SocketFile: filepath.Join(tempDir, "cd-socket0"),
@@ -232,7 +232,7 @@ var _ = Describe("Recorder", func() {
 					SocketFile: filepath.Join(tempDir, "cd-socket1"),
 				},
 			}
-			hps := []mountutils.HotpluggedDisksMountTargetEntry{
+			hps := []mountutils.MountTargetEntry{
 				{
 					TargetFile: filepath.Join(tempDir, "hp-target0"),
 				},
@@ -263,7 +263,7 @@ var _ = Describe("Recorder", func() {
 		})
 
 		It("Should delete hotplugged volumes and record entry", func() {
-			hps := []mountutils.HotpluggedDisksMountTargetEntry{
+			hps := []mountutils.MountTargetEntry{
 				{
 					TargetFile: filepath.Join(tempDir, "hp-target0"),
 				},
@@ -288,7 +288,7 @@ var _ = Describe("Recorder", func() {
 		})
 
 		It("Should delete container disks but keep the hotplugged volumes record", func() {
-			cds := []mountutils.ContainerDisksMountTargetEntry{
+			cds := []mountutils.MountTargetEntry{
 				{
 					TargetFile: filepath.Join(tempDir, "cd-target0"),
 					SocketFile: filepath.Join(tempDir, "cd-socket0"),
@@ -298,7 +298,7 @@ var _ = Describe("Recorder", func() {
 					SocketFile: filepath.Join(tempDir, "cd-socket1"),
 				},
 			}
-			hps := []mountutils.HotpluggedDisksMountTargetEntry{
+			hps := []mountutils.MountTargetEntry{
 				{
 					TargetFile: filepath.Join(tempDir, "hp-target0"),
 				},
@@ -339,7 +339,7 @@ var _ = Describe("Recorder", func() {
 		})
 
 		It("should add, remove and re-add an hotplugged volume entry", func() {
-			newRecord := []mountutils.HotpluggedDisksMountTargetEntry{
+			newRecord := []mountutils.MountTargetEntry{
 				{
 					TargetFile: "/hp/target1",
 				},
