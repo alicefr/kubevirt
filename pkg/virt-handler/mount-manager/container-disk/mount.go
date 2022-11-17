@@ -19,9 +19,10 @@ import (
 
 	containerdisk "kubevirt.io/kubevirt/pkg/container-disk"
 	"kubevirt.io/kubevirt/pkg/virt-handler/isolation"
-	mountutils "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager/utils"
 
 	v1 "kubevirt.io/api/core/v1"
+
+	mountutils "kubevirt.io/kubevirt/pkg/virt-handler/mount-manager/utils"
 )
 
 const (
@@ -57,18 +58,18 @@ func NewMounter(isoDetector isolation.PodIsolationDetector, clusterConfig *virtc
 	}
 }
 
-func (m *mounter) addMountTargetRecord(vmi *v1.VirtualMachineInstance, record []mountutils.ContainerDisksMountTargetEntry) error {
+func (m *mounter) addMountTargetRecord(vmi *v1.VirtualMachineInstance, record []mountutils.MountTargetEntry) error {
 	return m.mountRecorder.SetAddMountRecordContainerDisk(vmi, record, true)
 }
 
-func (m *mounter) setMountTargetRecord(vmi *v1.VirtualMachineInstance, record []mountutils.ContainerDisksMountTargetEntry) error {
+func (m *mounter) setMountTargetRecord(vmi *v1.VirtualMachineInstance, record []mountutils.MountTargetEntry) error {
 	return m.mountRecorder.SetAddMountRecordContainerDisk(vmi, record, false)
 }
 
 // Mount takes a vmi and mounts all container disks of the VMI, so that they are visible for the qemu process.
 // Additionally qcow2 images are validated if "verify" is true. The validation happens with rlimits set, to avoid DOS.
 func (m *mounter) MountAndVerify(vmi *v1.VirtualMachineInstance) (map[string]*containerdisk.DiskInfo, error) {
-	record := []mountutils.ContainerDisksMountTargetEntry{}
+	record := []mountutils.MountTargetEntry{}
 	disksInfo := map[string]*containerdisk.DiskInfo{}
 
 	for i, volume := range vmi.Spec.Volumes {
@@ -94,7 +95,7 @@ func (m *mounter) MountAndVerify(vmi *v1.VirtualMachineInstance) (map[string]*co
 				return nil, err
 			}
 
-			record = append(record, mountutils.ContainerDisksMountTargetEntry{
+			record = append(record, mountutils.MountTargetEntry{
 				TargetFile: unsafepath.UnsafeAbsolute(targetFile.Raw()),
 				SocketFile: sock,
 			})
@@ -279,7 +280,7 @@ func (m *mounter) mountKernelArtifacts(vmi *v1.VirtualMachineInstance, verify bo
 		return fmt.Errorf("failed to find socker path for kernel artifacts: %v", err)
 	}
 
-	record := []mountutils.ContainerDisksMountTargetEntry{
+	record := []mountutils.MountTargetEntry{
 		{
 			TargetFile: unsafepath.UnsafeAbsolute(targetDir.Raw()),
 			SocketFile: socketFilePath,
