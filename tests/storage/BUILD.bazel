@@ -12,6 +12,7 @@ go_library(
         "imageupload.go",
         "memorydump.go",
         "restore.go",
+        "scsi.go",
         "snapshot.go",
         "storage.go",
     ],
