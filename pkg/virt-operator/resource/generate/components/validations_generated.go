@@ -5116,6 +5116,11 @@ var CRDsValidation map[string]string = map[string]string{
                                   readonly:
                                     description: ReadOnly. Defaults to false.
                                     type: boolean
+                                  reservations:
+                                    description: Reservation indicates if the disk
+                                      needs to support the persistent reservation
+                                      for the SCSI disk
+                                    type: boolean
                                 type: object
                               name:
                                 description: Name is the device name
@@ -6962,6 +6967,10 @@ var CRDsValidation map[string]string = map[string]string{
                             type: string
                           readonly:
                             description: ReadOnly. Defaults to false.
+                            type: boolean
+                          reservations:
+                            description: Reservation indicates if the disk needs to
+                              support the persistent reservation for the SCSI disk
                             type: boolean
                         type: object
                       name:
@@ -9390,6 +9399,10 @@ var CRDsValidation map[string]string = map[string]string{
                             type: string
                           readonly:
                             description: ReadOnly. Defaults to false.
+                            type: boolean
+                          reservations:
+                            description: Reservation indicates if the disk needs to
+                              support the persistent reservation for the SCSI disk
                             type: boolean
                         type: object
                       name:
@@ -11896,6 +11909,10 @@ var CRDsValidation map[string]string = map[string]string{
                           readonly:
                             description: ReadOnly. Defaults to false.
                             type: boolean
+                          reservations:
+                            description: Reservation indicates if the disk needs to
+                              support the persistent reservation for the SCSI disk
+                            type: boolean
                         type: object
                       name:
                         description: Name is the device name
@@ -13990,6 +14007,11 @@ var CRDsValidation map[string]string = map[string]string{
                                     type: string
                                   readonly:
                                     description: ReadOnly. Defaults to false.
+                                    type: boolean
+                                  reservations:
+                                    description: Reservation indicates if the disk
+                                      needs to support the persistent reservation
+                                      for the SCSI disk
                                     type: boolean
                                 type: object
                               name:
@@ -17954,6 +17976,11 @@ var CRDsValidation map[string]string = map[string]string{
                                             type: string
                                           readonly:
                                             description: ReadOnly. Defaults to false.
+                                            type: boolean
+                                          reservations:
+                                            description: Reservation indicates if
+                                              the disk needs to support the persistent
+                                              reservation for the SCSI disk
                                             type: boolean
                                         type: object
                                       name:
@@ -22654,6 +22681,12 @@ var CRDsValidation map[string]string = map[string]string{
                                                 description: ReadOnly. Defaults to
                                                   false.
                                                 type: boolean
+                                              reservations:
+                                                description: Reservation indicates
+                                                  if the disk needs to support the
+                                                  persistent reservation for the SCSI
+                                                  disk
+                                                type: boolean
                                             type: object
                                           name:
                                             description: Name is the device name
@@ -24686,6 +24719,11 @@ var CRDsValidation map[string]string = map[string]string{
                                         type: string
                                       readonly:
                                         description: ReadOnly. Defaults to false.
+                                        type: boolean
+                                      reservations:
+                                        description: Reservation indicates if the
+                                          disk needs to support the persistent reservation
+                                          for the SCSI disk
                                         type: boolean
                                     type: object
                                   name:
