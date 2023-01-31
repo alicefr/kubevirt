@@ -12,10 +12,13 @@ go_library(
         "mediated_device.go",
         "mediated_devices_types.go",
         "pci_device.go",
+        "socket_device.go",
     ],
     importpath = "kubevirt.io/kubevirt/pkg/virt-handler/device-manager",
     visibility = ["//visibility:public"],
     deps = [
+        "//pkg/safepath:go_default_library",
+        "//pkg/storage/reservation:go_default_library",
         "//pkg/util:go_default_library",
         "//pkg/virt-config:go_default_library",
         "//pkg/virt-handler/device-manager/deviceplugin/v1beta1:go_default_library",
