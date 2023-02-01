@@ -36,6 +36,8 @@ import (
 
 	"kubevirt.io/client-go/log"
 
+	"kubevirt.io/kubevirt/pkg/safepath"
+	"kubevirt.io/kubevirt/pkg/util"
 	pluginapi "kubevirt.io/kubevirt/pkg/virt-handler/device-manager/deviceplugin/v1beta1"
 )
 
@@ -45,7 +47,8 @@ type SocketDevicePlugin struct {
 	pluginSocketPath string
 	stop             <-chan struct{}
 	health           chan deviceHealth
-	socketPath       string
+	socketDir        string
+	socket           string
 	socketName       string
 	resourceName     string
 	done             chan struct{}
@@ -54,7 +57,7 @@ type SocketDevicePlugin struct {
 	deregistered     chan struct{}
 }
 
-func NewSocketDevicePlugin(socketName, socketPath string) *SocketDevicePlugin {
+func NewSocketDevicePlugin(socketName, socketDir, socket string) *SocketDevicePlugin {
 	dpi := &SocketDevicePlugin{
 		devs: []*pluginapi.Device{
 			{
@@ -63,7 +66,8 @@ func NewSocketDevicePlugin(socketName, socketPath string) *SocketDevicePlugin {
 			},
 		},
 		pluginSocketPath: SocketPath(strings.Replace(socketName, "/", "-", -1)),
-		socketPath:       socketPath,
+		socket:           socket,
+		socketDir:        socketDir,
 		socketName:       socketName,
 		resourceName:     fmt.Sprintf("%s/%s", DeviceNamespace, socketName),
 		initialized:      false,
@@ -73,7 +77,7 @@ func NewSocketDevicePlugin(socketName, socketPath string) *SocketDevicePlugin {
 }
 
 func (dpi *SocketDevicePlugin) GetDevicePath() string {
-	return dpi.socketPath
+	return dpi.socketDir
 }
 
 func (dpi *SocketDevicePlugin) GetDeviceName() string {
@@ -204,9 +208,19 @@ func (dpi *SocketDevicePlugin) Allocate(ctx context.Context, r *pluginapi.Alloca
 	response := pluginapi.AllocateResponse{}
 	containerResponse := new(pluginapi.ContainerAllocateResponse)
 
+	prSock, err := safepath.JoinAndResolveWithRelativeRoot("/", dpi.socketDir, dpi.socket)
+	if err != nil {
+		return nil, fmt.Errorf("error opening the socket %s/%s: %v", dpi.socketDir, dpi.socket, err)
+	}
+	err = safepath.ChownAtNoFollow(prSock, util.NonRootUID, util.NonRootUID)
+	if err != nil {
+		return nil, fmt.Errorf("error setting the permission the socket %s/%s:%v", dpi.socketDir, dpi.socket, err)
+	}
+
 	m := new(pluginapi.Mount)
-	m.HostPath = dpi.socketPath
-	m.ContainerPath = dpi.socketPath
+	m.HostPath = dpi.socketDir
+	m.ContainerPath = dpi.socketDir
+	m.ReadOnly = false
 	containerResponse.Mounts = []*pluginapi.Mount{m}
 
 	response.ContainerResponses = []*pluginapi.ContainerAllocateResponse{containerResponse}
@@ -243,7 +257,7 @@ func (dpi *SocketDevicePlugin) healthCheck() error {
 	defer watcher.Close()
 
 	// This way we don't have to mount /dev from the node
-	devicePath := dpi.socketPath
+	devicePath := filepath.Join(dpi.socketDir, dpi.socket)
 
 	// Start watching the files before we check for their existence to avoid races
 	dirName := filepath.Dir(devicePath)
@@ -261,15 +275,15 @@ func (dpi *SocketDevicePlugin) healthCheck() error {
 		logger.Warningf("device '%s' is not present, the device plugin can't expose it.", dpi.socketName)
 		dpi.health <- deviceHealth{Health: pluginapi.Unhealthy}
 	}
-	logger.Infof("device '%s' is present.", dpi.socketPath)
+	logger.Infof("device '%s' is present.", dpi.socketDir)
 
-	dirName = filepath.Dir(dpi.socketPath)
+	dirName = filepath.Dir(dpi.socketDir)
 	err = watcher.Add(dirName)
 
 	if err != nil {
 		return fmt.Errorf("failed to add the device-plugin kubelet path to the watcher: %v", err)
 	}
-	_, err = os.Stat(dpi.socketPath)
+	_, err = os.Stat(dpi.socketDir)
 	if err != nil {
 		return fmt.Errorf("failed to stat the device-plugin socket: %v", err)
 	}
@@ -291,7 +305,7 @@ func (dpi *SocketDevicePlugin) healthCheck() error {
 					logger.Infof("monitored device %s disappeared", dpi.socketName)
 					dpi.health <- deviceHealth{Health: pluginapi.Unhealthy}
 				}
-			} else if event.Name == dpi.socketPath && event.Op == fsnotify.Remove {
+			} else if event.Name == dpi.socketDir && event.Op == fsnotify.Remove {
 				logger.Infof("device socket file for device %s was removed, kubelet probably restarted.", dpi.socketName)
 				return nil
 			}

@@ -399,6 +399,11 @@ func (app *virtHandlerApp) Run() {
 	go gracefulShutdownInformer.Run(stop)
 	go domainSharedInformer.Run(stop)
 
+	prSockDir, err := safepath.JoinAndResolveWithRelativeRoot("/", "/var/run/kubevirt/daemons/pr")
+	if err != nil {
+		panic(err)
+	}
+
 	se, exists, err := selinux.NewSELinux()
 	if err == nil && exists {
 		// relabel tun device
@@ -412,8 +417,7 @@ func (app *virtHandlerApp) Run() {
 		if err != nil {
 			panic(err)
 		}
-
-		err = selinux.RelabelFiles(unprivilegedContainerSELinuxLabel, se.IsPermissive(), devTun, devNull)
+		err = selinux.RelabelFiles(unprivilegedContainerSELinuxLabel, se.IsPermissive(), devTun, devNull, prSockDir)
 		if err != nil {
 			panic(fmt.Errorf("error relabeling required files: %v", err))
 		}
