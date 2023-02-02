@@ -72,6 +72,7 @@ type templateData struct {
 	VirtExportProxySha     string
 	VirtExportServerSha    string
 	GsSha                  string
+	PrHelperSha            string
 	PriorityClassSpec      string
 	FeatureGates           []string
 	InfraReplicas          uint8
@@ -84,6 +85,7 @@ type templateData struct {
 	VirtExportProxyImage   string
 	VirtExportServerImage  string
 	GsImage                string
+	PrHelperImage          string
 }
 
 func main() {
@@ -112,6 +114,7 @@ func main() {
 	virtExportProxySha := flag.String("virt-exportproxy-sha", "", shaEnvDeprecationMsg)
 	virtExportServerSha := flag.String("virt-exportserver-sha", "", shaEnvDeprecationMsg)
 	gsSha := flag.String("gs-sha", "", "")
+	prHelperSha := flag.String("pr-helper-sha", "", "")
 	featureGates := flag.String("feature-gates", "", "")
 	infraReplicas := flag.Uint("infra-replicas", 0, "")
 	virtOperatorImage := flag.String("virt-operator-image", "", "custom image for virt-operator")
@@ -165,6 +168,7 @@ func main() {
 		data.VirtExportProxySha = *virtExportProxySha
 		data.VirtExportServerSha = *virtExportServerSha
 		data.GsSha = *gsSha
+		data.PrHelperSha = *prHelperSha
 		data.OperatorRules = getOperatorRules()
 		data.KubeVirtLogo = getKubeVirtLogo(*kubeVirtLogoPath)
 		data.PackageName = *packageName
@@ -309,6 +313,7 @@ func getOperatorDeploymentSpec(data templateData, indentation int) string {
 		data.VirtExportProxySha,
 		data.VirtExportServerSha,
 		data.GsSha,
+		data.PrHelperSha,
 		data.VirtApiImage,
 		data.VirtControllerImage,
 		data.VirtHandlerImage,
@@ -316,6 +321,7 @@ func getOperatorDeploymentSpec(data templateData, indentation int) string {
 		data.VirtExportProxyImage,
 		data.VirtExportServerImage,
 		data.GsImage,
+		data.PrHelperImage,
 		data.VirtOperatorImage,
 		v1.PullPolicy(data.ImagePullPolicy))
 	if err != nil {
