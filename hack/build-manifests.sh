@@ -98,6 +98,7 @@ for arg in $args; do
         --virt-exportproxy-sha=${VIRT_EXPORTPROXY_SHA} \
         --virt-exportserver-sha=${VIRT_EXPORTSERVER_SHA} \
         --gs-sha=${GS_SHA} \
+        --pr-helper-sha=${PR_HELPER_SHA} \
         --feature-gates=${feature_gates} \
         --infra-replicas=${infra_replicas} \
         >${outfile}
