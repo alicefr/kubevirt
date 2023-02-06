@@ -488,6 +488,9 @@ const (
 	// Reason means that VMI is not live migratable because it uses HyperV Reenlightenment while TSC Frequency is not available
 	VirtualMachineInstanceReasonNoTSCFrequencyMigratable = "NoTSCFrequencyNotLiveMigratable"
 	// Reason means that VMI is not live migratable because it uses dedicated CPU and emulator thread isolation
+	// Reason means that VMI is not live migratable because it requested SCSI persitent reservation
+	VirtualMachineInstanceReasonPRNotMigratable = "PersistentReservationNotLiveMigratable"
+
 	VirtualMachineInstanceReasonDedicatedCPU = "DedicatedCPUNotLiveMigratable"
 )
 
