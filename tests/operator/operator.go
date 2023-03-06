@@ -2963,6 +2963,29 @@ spec:
 		})
 	})
 
+	Context("with PersistentReservation feature gate toggled", func() {
+		BeforeEach(func() {
+			tests.EnableFeatureGate(virtconfig.PersistentReservation)
+		})
+
+		AfterEach(func() {
+			tests.DisableFeatureGate(virtconfig.PersistentReservation)
+		})
+
+		It("should delete and recreate virt-handler", func() {
+			testsuite.WaitVirtHandlerReady()
+			tests.DisableFeatureGate(virtconfig.PersistentReservation)
+
+			Eventually(func() bool {
+				ds, err := virtClient.AppsV1().DaemonSets(originalKv.Namespace).Get(context.TODO(), "virt-handler", metav1.GetOptions{})
+				if err != nil {
+					return false
+				}
+				return len(ds.Spec.Template.Spec.Containers) == 1
+			}, time.Minute*5, time.Second*2).Should(BeTrue())
+		})
+	})
+
 	Context("[Serial] Seccomp configuration", Serial, func() {
 
 		Context("Kubevirt profile", func() {
