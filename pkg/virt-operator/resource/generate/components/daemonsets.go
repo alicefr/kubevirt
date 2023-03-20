@@ -272,8 +272,8 @@ func NewHandlerDaemonSet(namespace, repository, imagePrefix, version, launcherVe
 		{"kubelet-pods-shortened", kubeletPodsPath, "/pods", nil},
 		{"kubelet-pods", kubeletPodsPath, kubeletPodsPath, &bidi},
 		{"node-labeller", "/var/lib/kubevirt-node-labeller", "/var/lib/kubevirt-node-labeller", nil},
-		{reservation.PrVolumeName, reservation.GetPrHelperSocketDir(), reservation.GetPrHelperSocketDir(), &bidi},
 	}
+	volumes = append(volumes, volume{reservation.PrVolumeName, reservation.GetPrHelperSocketDir(), reservation.GetPrHelperSocketDir(), &bidi})
 
 	for _, volume := range volumes {
 		container.VolumeMounts = append(container.VolumeMounts, corev1.VolumeMount{

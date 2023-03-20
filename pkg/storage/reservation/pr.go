@@ -8,7 +8,7 @@ import (
 )
 
 const (
-	SourceDaemonsPath = "/run/kubevirt/daemons"
+	SourceDaemonsPath = "/var/run/kubevirt/daemons"
 )
 
 const (
