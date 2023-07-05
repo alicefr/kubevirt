@@ -39,6 +39,15 @@ const (
 
 const HotplugDiskDir = "/var/run/kubevirt/hotplug-disks/"
 
+type ErrorPolicy string
+
+const (
+	ErrorPolicyStop     ErrorPolicy = "stop"
+	ErrorPolicyIgnore   ErrorPolicy = "ignore"
+	ErrorPolicyReport   ErrorPolicy = "report"
+	ErrorPolicyEnospace ErrorPolicy = "enospace"
+)
+
 /*
  ATTENTION: Rerun code generators when comments on structs or fields are modified.
 */
@@ -606,6 +615,9 @@ type Disk struct {
 	// If specified the disk is made sharable and multiple write from different VMs are permitted
 	// +optional
 	Shareable *bool `json:"shareable,omitempty"`
+	// If specified, it can change the default error policy (stop) for the disk
+	// +optional
+	ErrorPolicy ErrorPolicy `json:"errorPolicy,omitempty"`
 }
 
 // CustomBlockSize represents the desired logical and physical block size for a VM disk.
