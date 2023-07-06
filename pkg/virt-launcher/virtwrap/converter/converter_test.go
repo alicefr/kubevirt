@@ -246,6 +246,34 @@ var _ = Describe("Converter", func() {
 			xml := diskToDiskXML(v1Disk)
 			Expect(xml).To(Equal(expectedXML))
 		})
+
+		DescribeTable("Should set the error policy", func(epolicy v1.ErrorPolicy, expected string, specified bool) {
+			v1Disk := &v1.Disk{
+				Name: "mydisk",
+				DiskDevice: v1.DiskDevice{
+					Disk: &v1.DiskTarget{
+						Bus: v1.VirtIO,
+					},
+				},
+			}
+			if specified {
+				v1Disk.ErrorPolicy = epolicy
+			}
+			var expectedXML = fmt.Sprintf(`<Disk device="disk" type="" model="virtio-non-transitional">
+  <source></source>
+  <target bus="virtio" dev="vda"></target>
+  <driver error_policy="%s" name="qemu" type="" discard="unmap"></driver>
+  <alias name="ua-mydisk"></alias>
+</Disk>`, expected)
+			xml := diskToDiskXML(v1Disk)
+			Expect(xml).To(Equal(expectedXML))
+		},
+			Entry("ErrorPolicy not specified", nil, "stop", false),
+			Entry("ErrorPolicy equal to stop", v1.ErrorPolicyStop, "stop", true),
+			Entry("ErrorPolicy equal to ignore", v1.ErrorPolicyIgnore, "ignore", true),
+			Entry("ErrorPolicy equal to report", v1.ErrorPolicyReport, "report", true),
+			Entry("ErrorPolicy equal to enospace", v1.ErrorPolicyEnospace, "enospace", true),
+		)
 	})
 
 	Context("with v1.VirtualMachineInstance", func() {
