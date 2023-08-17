@@ -145,6 +145,7 @@ API rule violation: list_type_missing,kubevirt.io/api/core/v1,VirtualMachineInst
 API rule violation: list_type_missing,kubevirt.io/api/core/v1,VirtualMachineInstanceSpec,Volumes
 API rule violation: list_type_missing,kubevirt.io/api/core/v1,VirtualMachineInstanceStatus,Conditions
 API rule violation: list_type_missing,kubevirt.io/api/core/v1,VirtualMachineInstanceStatus,Interfaces
+API rule violation: list_type_missing,kubevirt.io/api/core/v1,VirtualMachineInstanceStatus,MigratedVolumes
 API rule violation: list_type_missing,kubevirt.io/api/core/v1,VirtualMachineSpec,DataVolumeTemplates
 API rule violation: list_type_missing,kubevirt.io/api/core/v1,VirtualMachineStatus,Conditions
 API rule violation: list_type_missing,kubevirt.io/api/core/v1,VirtualMachineStatus,StateChangeRequests
@@ -164,6 +165,9 @@ API rule violation: list_type_missing,kubevirt.io/api/snapshot/v1alpha1,VirtualM
 API rule violation: list_type_missing,kubevirt.io/api/snapshot/v1alpha1,VirtualMachineSnapshotContentSpec,VolumeBackups
 API rule violation: list_type_missing,kubevirt.io/api/snapshot/v1alpha1,VirtualMachineSnapshotContentStatus,VolumeSnapshotStatus
 API rule violation: list_type_missing,kubevirt.io/api/snapshot/v1alpha1,VirtualMachineSnapshotStatus,Conditions
+API rule violation: list_type_missing,kubevirt.io/api/storage/v1alpha1,StorageMigrationList,Items
+API rule violation: list_type_missing,kubevirt.io/api/storage/v1alpha1,StorageMigrationSpec,MigratedVolume
+API rule violation: list_type_missing,kubevirt.io/api/storage/v1alpha1,StorageMigrationStatus,MigratedVolume
 API rule violation: list_type_missing,kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1,CDIConfigSpec,FeatureGates
 API rule violation: list_type_missing,kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1,CDIConfigSpec,ImagePullSecrets
 API rule violation: list_type_missing,kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1,CDIConfigSpec,InsecureRegistries

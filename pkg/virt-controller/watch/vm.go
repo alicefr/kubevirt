@@ -114,6 +114,7 @@ const (
 	HotPlugNetworkInterfaceErrorReason = "HotPlugNetworkInterfaceError"
 	AffinityChangeErrorReason          = "AffinityChangeError"
 	HotPlugMemoryErrorReason           = "HotPlugMemoryError"
+	MigrateDisks                       = "MigratieDisksError"
 )
 
 const defaultMaxCrashLoopBackoffDelaySeconds = 300
@@ -856,6 +857,57 @@ func (c *VMController) handleVolumeRequests(vm *virtv1.VirtualMachine, vmi *virt
 		}
 	}
 
+	return nil
+}
+
+func getVolName(v *virtv1.Volume) string {
+	var claim string
+	switch {
+	case v.VolumeSource.PersistentVolumeClaim != nil:
+		claim = v.VolumeSource.PersistentVolumeClaim.ClaimName
+	case v.VolumeSource.DataVolume != nil:
+		claim = v.VolumeSource.DataVolume.Name
+	}
+	return claim
+}
+
+func (c *VMController) handleMigrateVolumeRequests(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) error {
+	migrateVolMap := make(map[string]string)
+	volVmi := make(map[string]bool)
+	if vmi == nil {
+		return nil
+	}
+	if vmi.Status.MigrationState == nil {
+		return nil
+	}
+	for _, v := range vmi.Spec.Volumes {
+		if name := getVolName(&v); name != "" {
+			volVmi[name] = true
+		}
+	}
+	for k, v := range vm.Spec.Template.Spec.Volumes {
+		if name := getVolName(&v); name != "" {
+			// The volume to update in the VM needs to be one of the migrate
+			// volume AND already have been changed in the VMI spec
+			repName, okMig := migrateVolMap[name]
+			_, okVMI := volVmi[name]
+			if okMig && okVMI {
+				switch {
+				case v.VolumeSource.PersistentVolumeClaim != nil:
+					vm.Spec.Template.Spec.Volumes[k].VolumeSource.PersistentVolumeClaim.ClaimName = repName
+				case v.VolumeSource.DataVolume != nil:
+					// TODO afrosi: this might have very nasty consequences, but I still like
+					// the idea of getting rid of DVs with the migration, let's see what others think
+					vm.Spec.Template.Spec.Volumes[k].VolumeSource.PersistentVolumeClaim = &virtv1.PersistentVolumeClaimVolumeSource{
+						PersistentVolumeClaimVolumeSource: k8score.PersistentVolumeClaimVolumeSource{
+							ClaimName: repName,
+						},
+					}
+					vm.Spec.Template.Spec.Volumes[k].VolumeSource.DataVolume = nil
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -2831,6 +2883,10 @@ func (c *VMController) sync(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachin
 
 		if err := c.handleAffinityChangeRequest(vmCopy, vmi); err != nil {
 			syncErr = &syncErrorImpl{fmt.Errorf("Error encountered while handling node affinity change request: %v", err), AffinityChangeErrorReason}
+		}
+		err = c.handleMigrateVolumeRequests(vmCopy, vmi)
+		if err != nil {
+			syncErr = &syncErrorImpl{fmt.Errorf("Error encountered while handling migrate disks: %v", err), MigrateDisks}
 		}
 
 		if err := c.handleMemoryHotplugRequest(vmCopy, vmi); err != nil {
