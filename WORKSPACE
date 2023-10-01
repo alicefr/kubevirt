@@ -1441,6 +1441,14 @@ rpm(
 )
 
 rpm(
+    name = "glibc-langpack-raj-0__2.34-82.el9.x86_64",
+    sha256 = "f337bce76151a699234f024a69017d0ddac02e6cb0583cff627ecf36683bfe49",
+    urls = [
+        "http://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/glibc-langpack-raj-2.34-82.el9.x86_64.rpm",
+    ],
+)
+
+rpm(
     name = "glibc-minimal-langpack-0__2.34-82.el9.aarch64",
     sha256 = "98536615a9719305128a19fe35e677fc44d343ec5e43afe89977cc783a1e11d2",
     urls = [
@@ -1783,15 +1791,19 @@ rpm(
 )
 
 rpm(
-    name = "kernel-headers-0__5.14.0-364.el9.aarch64",
-    sha256 = "80896565b489078aa16387cc15fc3e33124da317df32ca760a18246a73527bed",
-    urls = ["https://storage.googleapis.com/builddeps/80896565b489078aa16387cc15fc3e33124da317df32ca760a18246a73527bed"],
+    name = "kernel-headers-0__5.14.0-368.el9.aarch64",
+    sha256 = "bc6e1337ad3804cfe0efa8a94eff6da41ac50cc52df28124bb388f5d5da15d3d",
+    urls = [
+        "http://mirror.stream.centos.org/9-stream/AppStream/aarch64/os/Packages/kernel-headers-5.14.0-368.el9.aarch64.rpm",
+    ],
 )
 
 rpm(
-    name = "kernel-headers-0__5.14.0-364.el9.x86_64",
-    sha256 = "30795c050f07f3d6168f90cccf32968cfdc20e008f299df3355b8619fbddc804",
-    urls = ["https://storage.googleapis.com/builddeps/30795c050f07f3d6168f90cccf32968cfdc20e008f299df3355b8619fbddc804"],
+    name = "kernel-headers-0__5.14.0-368.el9.x86_64",
+    sha256 = "b0abffd5d6c16f4d22a86e5b28fbacf6c8759ba23686a70b667b99eb48f76c80",
+    urls = [
+        "http://mirror.stream.centos.org/9-stream/AppStream/x86_64/os/Packages/kernel-headers-5.14.0-368.el9.x86_64.rpm",
+    ],
 )
 
 rpm(
@@ -3568,20 +3580,18 @@ rpm(
 )
 
 rpm(
-    name = "nftables-1__1.0.4-10.el9.aarch64",
-    sha256 = "03f20f6478763b1e4691d946929110da8571f6cc07c6977ff5234f382cc19698",
+    name = "nftables-1__1.0.4-11.el9.aarch64",
+    sha256 = "1921fa3fb26c4d1249d387783144ebe2be56967c2c838ab7cdd352c4c96aeeb5",
     urls = [
-        "http://mirror.stream.centos.org/9-stream/BaseOS/aarch64/os/Packages/nftables-1.0.4-10.el9.aarch64.rpm",
-        "https://storage.googleapis.com/builddeps/03f20f6478763b1e4691d946929110da8571f6cc07c6977ff5234f382cc19698",
+        "http://mirror.stream.centos.org/9-stream/BaseOS/aarch64/os/Packages/nftables-1.0.4-11.el9.aarch64.rpm",
     ],
 )
 
 rpm(
-    name = "nftables-1__1.0.4-10.el9.x86_64",
-    sha256 = "94a1828fabb047dacfc637f73831b7d2f2a2ff82984984c4af125f5efe0f2329",
+    name = "nftables-1__1.0.4-11.el9.x86_64",
+    sha256 = "2d9c555041853486216e5885115b0a8a4c9a346670dce13583ed0a64ceb1f811",
     urls = [
-        "http://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/nftables-1.0.4-10.el9.x86_64.rpm",
-        "https://storage.googleapis.com/builddeps/94a1828fabb047dacfc637f73831b7d2f2a2ff82984984c4af125f5efe0f2329",
+        "http://mirror.stream.centos.org/9-stream/BaseOS/x86_64/os/Packages/nftables-1.0.4-11.el9.x86_64.rpm",
     ],
 )
 
