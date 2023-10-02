@@ -4281,6 +4281,59 @@ var _ = Describe("Template", func() {
 			)
 
 		})
+		Context("with configmap in VMI annotations for generic sidecar", func() {
+			var vmi *v1.VirtualMachineInstance
+
+			BeforeEach(func() {
+				vmi = api.NewMinimalVMI("generic-sidecar-test")
+				vmi.Annotations = map[string]string{
+					hooks.HookSidecarListAnnotationName: `[{"image": "test:test", "configMap": {"name": "test-cm", "key": "script.sh"}}]`,
+				}
+			})
+			When("ConfigMap exists on the cluster", func() {
+				BeforeEach(func() {
+					k8sClient := k8sfake.NewSimpleClientset()
+					//virtClient.EXPECT().CoreV1().Return(cm).MaxTimes(1)
+					k8sClient.Fake.PrependReactor("get", "configmaps", func(action testing.Action) (handled bool, obj k8sruntime.Object, err error) {
+						cm := kubev1.ConfigMap{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "test-cm",
+							},
+							Data: map[string]string{"script.sh": "some-script"},
+						}
+						return true, &cm, nil
+					})
+					virtClient.EXPECT().CoreV1().Return(k8sClient.CoreV1()).AnyTimes()
+				})
+				It("should add ConfigMap as volume to Pod and mount in sidecar", func() {
+					config, kvInformer, svc = configFactory(defaultArch)
+					pod, err := svc.RenderLaunchManifest(vmi)
+					Expect(err).ToNot(HaveOccurred())
+
+					Expect(pod.Spec.Volumes).To(ContainElement(kubev1.Volume{
+						Name: "test-cm",
+						VolumeSource: kubev1.VolumeSource{
+							ConfigMap: &kubev1.ConfigMapVolumeSource{
+								LocalObjectReference: kubev1.LocalObjectReference{Name: "test-cm"},
+								DefaultMode:          pointer.Int32(0744),
+							},
+						},
+					}))
+					Expect(pod.Spec.Containers[1].VolumeMounts).To(ContainElement(kubev1.VolumeMount{
+						MountPath: "/usr/bin/onDefineDomain",
+						Name:      "test-cm",
+						SubPath:   "script.sh",
+					}))
+				})
+			})
+			When("ConfigMap does not exist on the cluster", func() {
+				It("should fail with error", func() {
+					config, kvInformer, svc = configFactory(defaultArch)
+					_, err := svc.RenderLaunchManifest(vmi)
+					Expect(err).To(HaveOccurred())
+				})
+			})
+		})
 
 	})
 
