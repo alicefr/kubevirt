@@ -74,6 +74,7 @@ const (
 	VmiMasquerade        = "vmi-masquerade"
 	VmiSRIOV             = "vmi-sriov"
 	VmiWithHookSidecar   = "vmi-with-sidecar-hook"
+	VmiWithHookGeneric   = "vmi-with-generic-hook"
 	VmiMultusPtp         = "vmi-multus-ptp"
 	VmiMultusMultipleNet = "vmi-multus-multiple-net"
 	VmiHostDisk          = "vmi-host-disk"
@@ -1192,6 +1193,20 @@ func GetVMIWithHookSidecar() *v1.VirtualMachineInstance {
 		"hooks.kubevirt.io/hookSidecars":              fmt.Sprintf("[{\"args\": [\"--version\", \"v1alpha2\"], \"image\": \"%s/example-hook-sidecar:%s\"}]", DockerPrefix, DockerTag),
 		"smbios.vm.kubevirt.io/baseBoardManufacturer": "Radical Edward",
 	}
+	return vmi
+}
+
+func GetVMIWithGenericHook() *v1.VirtualMachineInstance {
+	vmi := getBaseVMI(VmiWithHookGeneric)
+	vmi.Spec.Domain.Resources.Requests[k8sv1.ResourceMemory] = resource.MustParse("1024M")
+
+	initFedora(&vmi.Spec)
+	addNoCloudDiskWitUserData(&vmi.Spec, generateCloudConfigString(cloudConfigUserPassword))
+
+	vmi.ObjectMeta.Annotations = map[string]string{
+		"hooks.kubevirt.io/hookSidecars": fmt.Sprintf("[{\"args\": [\"--version\", \"v1alpha2\"], \"image\": \"%s/sidecar-shim:%s\", \"configMap\": {\"name\": \"my-config-map\", \"key\": \"my_script.sh\"}}]", DockerPrefix, DockerTag),
+	}
+	// TODO: also add the ConfigMap in generated example. Refer https://github.com/kubevirt/kubevirt/pull/10479#discussion_r1362021721
 	return vmi
 }
 

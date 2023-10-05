@@ -117,6 +117,7 @@ func main() {
 		utils.VmiSlirp:             utils.GetVMISlirp(),
 		utils.VmiSRIOV:             utils.GetVMISRIOV(),
 		utils.VmiWithHookSidecar:   utils.GetVMIWithHookSidecar(),
+		utils.VmiWithHookGeneric:   utils.GetVMIWithGenericHook(),
 		utils.VmiMultusPtp:         utils.GetVMIMultusPtp(),
 		utils.VmiMultusMultipleNet: utils.GetVMIMultusMultipleNet(),
 		utils.VmiMasquerade:        utils.GetVMIMasquerade(),
