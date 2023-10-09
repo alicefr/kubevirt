@@ -20611,6 +20611,13 @@
       "description": "Memory shows various informations about the VirtualMachine memory.",
       "$ref": "#/definitions/v1.MemoryStatus"
      },
+     "migratedVolumes": {
+      "type": "array",
+      "items": {
+       "default": {},
+       "$ref": "#/definitions/v1alpha1.MigratedVolume"
+      }
+     },
      "migrationMethod": {
       "description": "Represents the method using which the vmi can be migrated: live migration or block migration",
       "type": "string"
@@ -21161,6 +21168,17 @@
      },
      "time": {
       "$ref": "#/definitions/k8s.io.apimachinery.pkg.apis.meta.v1.Time"
+     }
+    }
+   },
+   "v1alpha1.MigratedVolume": {
+    "type": "object",
+    "properties": {
+     "destinationPvc": {
+      "type": "string"
+     },
+     "sourcePvc": {
+      "type": "string"
      }
     }
    },

@@ -26,6 +26,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	types "k8s.io/apimachinery/pkg/types"
+	v1alpha1 "kubevirt.io/api/storage/v1alpha1"
 	v1beta1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 )
 
@@ -5471,6 +5472,11 @@ func (in *VirtualMachineInstanceStatus) DeepCopyInto(out *VirtualMachineInstance
 		in, out := &in.Memory, &out.Memory
 		*out = new(MemoryStatus)
 		(*in).DeepCopyInto(*out)
+	}
+	if in.MigratedVolumes != nil {
+		in, out := &in.MigratedVolumes, &out.MigratedVolumes
+		*out = make([]v1alpha1.MigratedVolume, len(*in))
+		copy(*out, *in)
 	}
 	return
 }
