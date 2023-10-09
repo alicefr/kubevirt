@@ -34,6 +34,8 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+
+	storagev1alpha1 "kubevirt.io/api/storage/v1alpha1"
 )
 
 const DefaultGracePeriodSeconds int64 = 30
@@ -224,6 +226,7 @@ type VirtualMachineInstanceStatus struct {
 	MigrationMethod VirtualMachineInstanceMigrationMethod `json:"migrationMethod,omitempty"`
 	// This represents the migration transport
 	MigrationTransport VirtualMachineInstanceMigrationTransport `json:"migrationTransport,omitempty"`
+
 	// The Quality of Service (QOS) classification assigned to the virtual machine instance based on resource requirements
 	// See PodQOSClass type for available QOS classes
 	// More info: https://git.k8s.io/community/contributors/design-proposals/node/resource-qos.md
@@ -283,7 +286,8 @@ type VirtualMachineInstanceStatus struct {
 
 	// Memory shows various informations about the VirtualMachine memory.
 	// +optional
-	Memory *MemoryStatus `json:"memory,omitempty"`
+	Memory          *MemoryStatus                    `json:"memory,omitempty"`
+	MigratedVolumes []storagev1alpha1.MigratedVolume `json:"migratedVolumes,omitempty"`
 }
 
 // PersistentVolumeClaimInfo contains the relavant information virt-handler needs cached about a PVC
