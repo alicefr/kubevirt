@@ -33,6 +33,7 @@ import (
 
 	cmdv1 "kubevirt.io/kubevirt/pkg/handler-launcher-com/cmd/v1"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/api"
+	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter"
 
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter/vcpu"
 
@@ -64,8 +65,9 @@ const (
 )
 
 type migrationDisks struct {
-	shared    map[string]bool
-	generated map[string]bool
+	shared         map[string]bool
+	generated      map[string]bool
+	localToMigrate map[string]bool
 }
 
 type migrationMonitor struct {
@@ -201,11 +203,9 @@ func injectNewSection(encoder *xml.Encoder, domain *api.Domain, section []string
 			logger.Errorf("error getting token: %v\n", err)
 			return err
 		}
-
 		switch v := token.(type) {
 		case xml.StartElement:
 			location = append(location, v.Name.Local)
-
 		case xml.EndElement:
 			newLocation = location[:len(location)-1]
 		}
@@ -263,6 +263,18 @@ func shouldOverrideForDedicatedCPUTarget(section []string, strict bool) bool {
 	return false
 }
 
+func shouldOverrideForSourceDiskSection(section []string, strict bool) bool {
+	if (!strict || len(section) == 4) &&
+		len(section) >= 4 &&
+		section[0] == "domain" &&
+		section[1] == "devices" &&
+		section[2] == "disk" &&
+		section[3] == "source" {
+		return true
+	}
+	return false
+}
+
 // This returns domain xml without the metadata section, as it is only relevant to the source domain
 // Note: Unfortunately we can't just use UnMarshall + Marshall here, as that leads to unwanted XML alterations
 func migratableDomXML(dom cli.VirDomain, vmi *v1.VirtualMachineInstance, domSpec *api.DomainSpec) (string, error) {
@@ -278,18 +290,23 @@ func migratableDomXML(dom cli.VirDomain, vmi *v1.VirtualMachineInstance, domSpec
 		log.Log.Object(vmi).Reason(err).Error("Live migration failed. Failed to get XML.")
 		return "", err
 	}
-
+	err = xml.Unmarshal([]byte(xmlstr), &domain)
+	if err != nil {
+		return "", err
+	}
 	if vmi.IsCPUDedicated() {
 		// If the VMI has dedicated CPUs, we need to replace the old CPUs that were
 		// assigned in the source node with the new CPUs assigned in the target node
-		err = xml.Unmarshal([]byte(xmlstr), &domain)
-		if err != nil {
-			return "", err
-		}
 		domain, err = generateDomainForTargetCPUSetAndTopology(vmi, domSpec)
 		if err != nil {
 			return "", err
 		}
+	}
+	// set slice size for local disks to migrate
+	migVols, err := setDiskSizeForLocalDiskToMigrate(domSpec, domain, vmi)
+	if err != nil {
+		log.Log.Object(vmi).Reason(err).Error("Failed to set size for local disk.")
+		return "", err
 	}
 
 	decoder := xml.NewDecoder(bytes.NewReader([]byte(xmlstr)))
@@ -298,7 +315,9 @@ func migratableDomXML(dom cli.VirDomain, vmi *v1.VirtualMachineInstance, domSpec
 
 	var location = make([]string, 0)
 	var newLocation []string = nil
-
+	currDisk := 0
+	nextMigVol := 0
+	setMigVol := len(migVols) > 0
 	for {
 		if newLocation != nil {
 			// Postpone popping end elements from `location` to ensure their removal
@@ -313,7 +332,6 @@ func migratableDomXML(dom cli.VirDomain, vmi *v1.VirtualMachineInstance, domSpec
 			log.Log.Object(vmi).Errorf("error getting token: %v\n", err)
 			return "", err
 		}
-
 		switch v := token.(type) {
 		case xml.StartElement:
 			location = append(location, v.Name.Local)
@@ -326,13 +344,29 @@ func migratableDomXML(dom cli.VirDomain, vmi *v1.VirtualMachineInstance, domSpec
 					return "", err
 				}
 			}
+			if setMigVol && shouldOverrideForSourceDiskSection(location, exactLocation) {
+				if migVols[nextMigVol] == currDisk {
+					err = injectNewSection(encoder, domain, location, log.Log.Object(vmi))
+					if err != nil {
+						return "", err
+					}
+					nextMigVol++
+					// We finish to check all the migrated volumes
+					if nextMigVol >= len(migVols) {
+						setMigVol = false
+					}
+				}
+				currDisk++
+			}
 		case xml.EndElement:
 			newLocation = location[:len(location)-1]
 		}
 		if vmi.IsCPUDedicated() && shouldOverrideForDedicatedCPUTarget(location, insideBlock) {
 			continue
 		}
-
+		if shouldOverrideForSourceDiskSection(location, insideBlock) {
+			continue
+		}
 		if err := encoder.EncodeToken(xml.CopyToken(token)); err != nil {
 			log.Log.Object(vmi).Reason(err).Errorf("Failed to encode token %v", token)
 			return "", err
@@ -357,26 +391,66 @@ func (d *migrationDisks) isGeneratedVolume(name string) bool {
 	return generated
 }
 
+func (d *migrationDisks) isLocalVolumeToMigrate(name string) bool {
+	_, migrate := d.localToMigrate[name]
+	return migrate
+}
+
+func getClaimNameFromVMIStatus(name string, vmiStatus v1.VirtualMachineInstanceStatus) (string, error) {
+	for _, vStatus := range vmiStatus.VolumeStatus {
+		if vStatus.PersistentVolumeClaimInfo != nil && name == vStatus.Name {
+			return vStatus.PersistentVolumeClaimInfo.ClaimName, nil
+		}
+	}
+	return "", fmt.Errorf("claim name for volume %s not found", name)
+}
+
 func classifyVolumesForMigration(vmi *v1.VirtualMachineInstance) *migrationDisks {
 	// This method collects all VMI volumes that should not be copied during
 	// live migration. It also collects all generated disks suck as cloudinit, secrets, ServiceAccount and ConfigMaps
 	// to make sure that these are being copied during migration.
-	// Persistent volume claims without ReadWriteMany access mode
-	// should be filtered out earlier in the process
 
 	disks := &migrationDisks{
-		shared:    make(map[string]bool),
-		generated: make(map[string]bool),
+		shared:         make(map[string]bool),
+		generated:      make(map[string]bool),
+		localToMigrate: make(map[string]bool),
+	}
+	migrateDisks := make(map[string]bool)
+	for _, v := range vmi.Status.MigratedVolumes {
+		migrateDisks[v.SourcePvc] = true
 	}
 	for _, volume := range vmi.Spec.Volumes {
 		volSrc := volume.VolumeSource
-		if volSrc.PersistentVolumeClaim != nil || volSrc.DataVolume != nil ||
-			(volSrc.HostDisk != nil && *volSrc.HostDisk.Shared) {
-			disks.shared[volume.Name] = true
-		}
-		if volSrc.ConfigMap != nil || volSrc.Secret != nil || volSrc.DownwardAPI != nil ||
+		switch {
+		case volSrc.PersistentVolumeClaim != nil || volSrc.DataVolume != nil:
+			var name string
+			if volSrc.PersistentVolumeClaim != nil {
+				name = volSrc.PersistentVolumeClaim.PersistentVolumeClaimVolumeSource.ClaimName
+			} else {
+				name = volSrc.DataVolume.Name
+			}
+			if _, ok := migrateDisks[name]; ok {
+				disks.localToMigrate[volume.Name] = true
+			} else {
+				disks.shared[volume.Name] = true
+			}
+		case volSrc.HostDisk != nil:
+			if *volSrc.HostDisk.Shared {
+				disks.shared[volume.Name] = true
+			} else {
+				// Filesystem DVs and PVCs are replaced by hostdisk in virt-launcher
+				name, err := getClaimNameFromVMIStatus(volume.Name, vmi.Status)
+				if err != nil {
+					continue
+				}
+				if _, ok := migrateDisks[name]; ok {
+					disks.localToMigrate[volume.Name] = true
+				}
+
+			}
+		case volSrc.ConfigMap != nil || volSrc.Secret != nil || volSrc.DownwardAPI != nil ||
 			volSrc.ServiceAccount != nil || volSrc.CloudInitNoCloud != nil ||
-			volSrc.CloudInitConfigDrive != nil || volSrc.ContainerDisk != nil {
+			volSrc.CloudInitConfigDrive != nil || volSrc.ContainerDisk != nil:
 			disks.generated[volume.Name] = true
 		}
 	}
@@ -524,7 +598,7 @@ func newMigrationMonitor(vmi *v1.VirtualMachineInstance, l *LibvirtDomainManager
 		progressWatermark:        0,
 		remainingData:            0,
 		progressTimeout:          options.ProgressTimeout,
-		acceptableCompletionTime: options.CompletionTimeoutPerGiB * getVMIMigrationDataSize(vmi, l.ephemeralDiskDir),
+		acceptableCompletionTime: options.CompletionTimeoutPerGiB * getVMIMigrationDataSize(vmi, l.ephemeralDiskDir) * 1000, // TODO afrosi: timeout for migrating disks
 	}
 
 	return monitor
@@ -868,6 +942,59 @@ func generateMigrationParams(dom cli.VirDomain, vmi *v1.VirtualMachineInstance, 
 	return params, nil
 }
 
+// ClientCreator is a function to return the Kubernetes client
+type getDiskVirtualSizeFuncType func(disk *api.Disk) (int64, error)
+
+var getDiskVirtualSizeFunc getDiskVirtualSizeFuncType
+
+func init() {
+	getDiskVirtualSizeFunc = getDiskVirtualSize
+}
+
+// calculateStorageMigrateDiskSize return the size of a local volume to migrate.
+// See suggestion in: https://issues.redhat.com/browse/RHEL-4607
+func getDiskVirtualSize(disk *api.Disk) (int64, error) {
+	var path string
+	switch {
+	case disk.Source.Dev != "":
+		path = disk.Source.Dev
+	case disk.Source.File != "":
+		path = disk.Source.File
+	default:
+		return -1, fmt.Errorf("not path set")
+	}
+	info, err := converter.GetImageInfo(path)
+	if err != nil {
+		return -1, err
+	}
+	return info.VirtualSize, nil
+}
+
+func setDiskSizeForLocalDiskToMigrate(domSpec *api.DomainSpec, dom *api.Domain, vmi *v1.VirtualMachineInstance) ([]int, error) {
+	var migVols []int
+	migDisks := classifyVolumesForMigration(vmi)
+	for i, d := range domSpec.Devices.Disks {
+		dom.Spec.Devices.Disks = append(dom.Spec.Devices.Disks, d)
+		name := d.Alias.GetName()
+		if !migDisks.isLocalVolumeToMigrate(name) {
+			continue
+		}
+		size, err := getDiskVirtualSizeFunc(&d)
+		if err != nil {
+			return migVols, err
+		}
+		dom.Spec.Devices.Disks[i].Source.Slices = append(dom.Spec.Devices.Disks[i].Source.Slices,
+			api.Slice{
+				Slice: api.SliceType{
+					Type:   "storage",
+					Offset: 0,
+					Size:   size,
+				}})
+		migVols = append(migVols, i)
+	}
+	return migVols, nil
+}
+
 func (l *LibvirtDomainManager) migrateHelper(vmi *v1.VirtualMachineInstance, options *cmdclient.MigrationOptions) error {
 
 	var err error
@@ -906,7 +1033,6 @@ func (l *LibvirtDomainManager) migrateHelper(vmi *v1.VirtualMachineInstance, opt
 
 		return nil
 	}
-
 	err = critSection()
 	if err != nil {
 		return err
