@@ -45,6 +45,7 @@ import (
 	instancetypev1beta1 "kubevirt.io/api/instancetype/v1beta1"
 	poolv1 "kubevirt.io/api/pool/v1alpha1"
 	snapshotv1 "kubevirt.io/api/snapshot/v1alpha1"
+	virtstoragev1alpha1 "kubevirt.io/api/storage/v1alpha1"
 )
 
 const (
@@ -67,6 +68,7 @@ var (
 	VIRTUALMACHINEEXPORT             = "virtualmachineexports." + exportv1.SchemeGroupVersion.Group
 	MIGRATIONPOLICY                  = "migrationpolicies." + migrationsv1.MigrationPolicyKind.Group
 	VIRTUALMACHINECLONE              = "virtualmachineclones." + clonev1alpha1.VirtualMachineCloneKind.Group
+	STORAGEMIGRATION                 = "storagemigrations." + virtstoragev1alpha1.StorageMigrationKind.Group
 	PreserveUnknownFieldsFalse       = false
 )
 
@@ -870,4 +872,41 @@ func NewKubeVirtPriorityClassCR() *schedulingv1.PriorityClass {
 		GlobalDefault: false,
 		Description:   "This priority class should be used for KubeVirt core components only.",
 	}
+}
+
+func NewStorageMigrationCrd() (*extv1.CustomResourceDefinition, error) {
+	crd := newBlankCrd()
+
+	crd.ObjectMeta.Name = STORAGEMIGRATION
+	crd.Spec = extv1.CustomResourceDefinitionSpec{
+		Group: virtstoragev1alpha1.StorageMigrationKind.Group,
+		Versions: []extv1.CustomResourceDefinitionVersion{
+			{
+				Name:    virtstoragev1alpha1.SchemeGroupVersion.Version,
+				Served:  true,
+				Storage: true,
+			},
+		},
+		Scope: "Namespaced",
+
+		Names: extv1.CustomResourceDefinitionNames{
+			Plural:   "storagemigrations",
+			Singular: "storagemigration",
+			Kind:     virtstoragev1alpha1.StorageMigrationKind.Kind,
+			Categories: []string{
+				"all",
+			},
+		},
+	}
+	err := addFieldsToAllVersions(crd, &extv1.CustomResourceSubresources{
+		Status: &extv1.CustomResourceSubresourceStatus{},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	if err = patchValidationForAllVersions(crd); err != nil {
+		return nil, err
+	}
+	return crd, nil
 }
