@@ -32,6 +32,8 @@ import (
 
 	v1 "kubevirt.io/api/core/v1"
 
+	storagev1alpha1 "kubevirt.io/api/storage/v1alpha1"
+
 	webhookutils "kubevirt.io/kubevirt/pkg/util/webhooks"
 )
 
@@ -102,11 +104,12 @@ func admitHotplugStorage(newVolumes, oldVolumes []v1.Volume, newDisks, oldDisks 
 	newPermanentVolumeMap := getPermanentVolumes(newVolumes, volumeStatuses)
 	oldHotplugVolumeMap := getHotplugVolumes(oldVolumes, volumeStatuses)
 	oldPermanentVolumeMap := getPermanentVolumes(oldVolumes, volumeStatuses)
+	migratedVolumeMap := getMigratedVolumeMaps(newVMI.Status.MigratedVolumes)
 
 	newDiskMap := getDiskMap(newDisks)
 	oldDiskMap := getDiskMap(oldDisks)
 
-	permanentAr := verifyPermanentVolumes(newPermanentVolumeMap, oldPermanentVolumeMap, newDiskMap, oldDiskMap)
+	permanentAr := verifyPermanentVolumes(newPermanentVolumeMap, oldPermanentVolumeMap, newDiskMap, oldDiskMap, migratedVolumeMap)
 	if permanentAr != nil {
 		return permanentAr
 	}
@@ -198,7 +201,27 @@ func verifyHotplugVolumes(newHotplugVolumeMap, oldHotplugVolumeMap map[string]v1
 	return nil
 }
 
-func verifyPermanentVolumes(newPermanentVolumeMap, oldPermanentVolumeMap map[string]v1.Volume, newDisks, oldDisks map[string]v1.Disk) *admissionv1.AdmissionResponse {
+func getVolName(v *v1.Volume) string {
+	var claim string
+	switch {
+	case v.VolumeSource.PersistentVolumeClaim != nil:
+		claim = v.VolumeSource.PersistentVolumeClaim.ClaimName
+	case v.VolumeSource.DataVolume != nil:
+		claim = v.VolumeSource.DataVolume.Name
+	}
+	return claim
+}
+
+func isMigrateDisk(newVol, oldVol *v1.Volume, migratedVolumeMap map[string]string) bool {
+	oldVolName := getVolName(oldVol)
+	newVolName := getVolName(newVol)
+	if v, ok := migratedVolumeMap[oldVolName]; ok && v == newVolName {
+		return true
+	}
+	return false
+}
+
+func verifyPermanentVolumes(newPermanentVolumeMap, oldPermanentVolumeMap map[string]v1.Volume, newDisks, oldDisks map[string]v1.Disk, migratedVolumeMap map[string]string) *admissionv1.AdmissionResponse {
 	if len(newPermanentVolumeMap) != len(oldPermanentVolumeMap) {
 		// Removed one of the permanent volumes, reject admission.
 		return webhookutils.ToAdmissionResponse([]metav1.StatusCause{
@@ -220,7 +243,9 @@ func verifyPermanentVolumes(newPermanentVolumeMap, oldPermanentVolumeMap map[str
 				},
 			})
 		}
-		if !equality.Semantic.DeepEqual(v, oldPermanentVolumeMap[k]) {
+		oldVol := oldPermanentVolumeMap[k]
+		isMigrate := isMigrateDisk(&v, &oldVol, migratedVolumeMap)
+		if !equality.Semantic.DeepEqual(v, oldVol) && !isMigrate {
 			return webhookutils.ToAdmissionResponse([]metav1.StatusCause{
 				{
 					Type:    metav1.CauseTypeFieldValueInvalid,
@@ -228,7 +253,7 @@ func verifyPermanentVolumes(newPermanentVolumeMap, oldPermanentVolumeMap map[str
 				},
 			})
 		}
-		if !equality.Semantic.DeepEqual(newDisks[k], oldDisks[k]) {
+		if !equality.Semantic.DeepEqual(newDisks[k], oldDisks[k]) && !isMigrate {
 			return webhookutils.ToAdmissionResponse([]metav1.StatusCause{
 				{
 					Type:    metav1.CauseTypeFieldValueInvalid,
@@ -280,6 +305,14 @@ func getPermanentVolumes(volumes []v1.Volume, volumeStatuses []v1.VolumeStatus) 
 		}
 	}
 	return permanentVolumes
+}
+
+func getMigratedVolumeMaps(migratedDisks []storagev1alpha1.MigratedVolume) map[string]string {
+	volumes := make(map[string]string)
+	for _, v := range migratedDisks {
+		volumes[v.SourcePvc] = v.DestinationPvc
+	}
+	return volumes
 }
 
 func admitVMILabelsUpdate(
