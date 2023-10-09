@@ -79,6 +79,7 @@ import (
 	v1alpha111 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/migrations/v1alpha1"
 	v1alpha112 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/pool/v1alpha1"
 	v1alpha113 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/snapshot/v1alpha1"
+	v1alpha114 "kubevirt.io/client-go/generated/kubevirt/clientset/versioned/typed/storage/v1alpha1"
 	versioned2 "kubevirt.io/client-go/generated/network-attachment-definition-client/clientset/versioned"
 	versioned3 "kubevirt.io/client-go/generated/prometheus-operator/clientset/versioned"
 	version "kubevirt.io/client-go/version"
@@ -433,6 +434,16 @@ func (_m *MockKubevirtClient) MigrationPolicyClient() *v1alpha111.MigrationsV1al
 
 func (_mr *_MockKubevirtClientRecorder) MigrationPolicyClient() *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "MigrationPolicyClient")
+}
+
+func (_m *MockKubevirtClient) StorageMigration(namespace string) v1alpha114.StorageMigrationInterface {
+	ret := _m.ctrl.Call(_m, "StorageMigration", namespace)
+	ret0, _ := ret[0].(v1alpha114.StorageMigrationInterface)
+	return ret0
+}
+
+func (_mr *_MockKubevirtClientRecorder) StorageMigration(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "StorageMigration", arg0)
 }
 
 func (_m *MockKubevirtClient) Discovery() discovery.DiscoveryInterface {
