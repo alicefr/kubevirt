@@ -634,6 +634,30 @@ func setTargetPodSELinuxLevel(pod *k8sv1.Pod, vmiSeContext string) error {
 	return nil
 }
 
+func replaceSourcePVCswithDestinationPVCsPod(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod) error {
+	replaceVol := make(map[string]string)
+	for _, v := range vmi.Status.MigratedVolumes {
+		replaceVol[v.SourcePvc] = v.DestinationPvc
+	}
+
+	// Replace source PVCs with the destination PVCs in the target pod
+	for _, v := range pod.Spec.Volumes {
+		// For now, we only replace PVCs with PVCs
+		if v.VolumeSource.PersistentVolumeClaim == nil {
+			continue
+		}
+		claim := v.VolumeSource.PersistentVolumeClaim.ClaimName
+		if dest, ok := replaceVol[claim]; ok {
+			v.VolumeSource.PersistentVolumeClaim.ClaimName = dest
+			delete(replaceVol, claim)
+		}
+	}
+	if len(replaceVol) != 0 {
+		return fmt.Errorf("failed to replace all local volumes to migrate with the destination volumes in the target pod")
+	}
+	return nil
+}
+
 func (c *MigrationController) createTargetPod(migration *virtv1.VirtualMachineInstanceMigration, vmi *virtv1.VirtualMachineInstance, sourcePod *k8sv1.Pod) error {
 	templatePod, err := c.templateService.RenderMigrationManifest(vmi, sourcePod)
 	if err != nil {
@@ -697,6 +721,11 @@ func (c *MigrationController) createTargetPod(migration *virtv1.VirtualMachineIn
 				break
 			}
 		}
+	}
+	// If we migrate local disks, then replace the source PVCs with the
+	// destination PVCs
+	if err := replaceSourcePVCswithDestinationPVCsPod(vmi, templatePod); err != nil {
+		return err
 	}
 
 	key := controller.MigrationKey(migration)
@@ -1286,6 +1315,7 @@ func (c *MigrationController) sync(key string, migration *virtv1.VirtualMachineI
 					}
 				}
 			}
+
 			if len(patches) != 0 {
 				vmi, err = c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.JSONPatchType, controller.GeneratePatchBytes(patches), &v1.PatchOptions{})
 				if err != nil {
