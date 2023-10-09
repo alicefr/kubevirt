@@ -3578,6 +3578,77 @@ var CRDsValidation map[string]string = map[string]string{
   - spec
   type: object
 `,
+	"storagemigration": `openAPIV3Schema:
+  description: StorageMigration defines the operation of moving the storage to another
+    storage backend
+  properties:
+    apiVersion:
+      description: 'APIVersion defines the versioned schema of this representation
+        of an object. Servers should convert recognized schemas to the latest internal
+        value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources'
+      type: string
+    kind:
+      description: 'Kind is a string value representing the REST resource this object
+        represents. Servers may infer this from the endpoint the client submits requests
+        to. Cannot be updated. In CamelCase. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds'
+      type: string
+    metadata:
+      type: object
+    spec:
+      description: StorageMigrationSpec is the spec for a StorageMigration resource
+      properties:
+        migratedVolume:
+          description: MigratedVolumes is a list of volumes to be migrated
+          items:
+            properties:
+              destinationPvc:
+                type: string
+              sourcePvc:
+                type: string
+            type: object
+          type: array
+        migrationStorageClass:
+          description: MigrationStorageClass contains the information for relocating
+            the volumes of the source storage class to the destination storage class
+          properties:
+            destinationStorageClass:
+              type: string
+            sourceStorageClass:
+              type: string
+          type: object
+        reclaimPolicySourcePvc:
+          description: ReclaimPolicySourcePvc describes how the source volumes will
+            be treated after a successful migration
+          type: string
+        vmiName:
+          type: string
+      type: object
+    status:
+      description: StorageMigrationStatus is the status for a StorageMigration resource
+      properties:
+        completed:
+          type: boolean
+        failed:
+          type: boolean
+        migratedVolume:
+          description: MigratedVolumes is a list of volumes to be migrated
+          items:
+            properties:
+              destinationPvc:
+                type: string
+              sourcePvc:
+                type: string
+            type: object
+          type: array
+        virtualMachineMigrationName:
+          description: VirtualMachineMigrationState state of the virtual machine migration
+            triggered by the storage migration
+          type: string
+      type: object
+  required:
+  - spec
+  type: object
+`,
 	"virtualmachine": `openAPIV3Schema:
   description: VirtualMachine handles the VirtualMachines that are not running or
     are in a stopped state The VirtualMachine contains the template to create the
@@ -12064,6 +12135,15 @@ var CRDsValidation map[string]string = map[string]string{
               pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
               x-kubernetes-int-or-string: true
           type: object
+        migratedVolumes:
+          items:
+            properties:
+              destinationPvc:
+                type: string
+              sourcePvc:
+                type: string
+            type: object
+          type: array
         migrationMethod:
           description: 'Represents the method using which the vmi can be migrated:
             live migration or block migration'

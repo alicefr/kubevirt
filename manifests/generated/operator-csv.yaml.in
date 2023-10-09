@@ -373,6 +373,16 @@ spec:
           - watch
           - patch
         - apiGroups:
+          - storage.kubevirt.io
+          resources:
+          - storagemigrations
+          verbs:
+          - create
+          - get
+          - list
+          - watch
+          - patch
+        - apiGroups:
           - kubevirt.io
           resources:
           - virtualmachineinstancepresets
@@ -722,6 +732,15 @@ spec:
           - list
           - watch
         - apiGroups:
+          - storage.kubevirt.io
+          resources:
+          - storagemigrations
+          verbs:
+          - get
+          - list
+          - watch
+          - update
+        - apiGroups:
           - route.openshift.io
           resources:
           - routes
@@ -1003,6 +1022,14 @@ spec:
           - list
           - watch
         - apiGroups:
+          - storage.kubevirt.io
+          resources:
+          - storagemigrations
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
           - subresources.kubevirt.io
           resources:
           - virtualmachineinstances/console
@@ -1152,6 +1179,14 @@ spec:
           - list
           - watch
         - apiGroups:
+          - storage.kubevirt.io
+          resources:
+          - storagemigrations
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
           - subresources.kubevirt.io
           resources:
           - virtualmachines/expand-spec
@@ -1229,6 +1264,14 @@ spec:
           - migrations.kubevirt.io
           resources:
           - migrationpolicies
+          verbs:
+          - get
+          - list
+          - watch
+        - apiGroups:
+          - storage.kubevirt.io
+          resources:
+          - storagemigrations
           verbs:
           - get
           - list

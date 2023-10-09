@@ -25,6 +25,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 
 	"kubevirt.io/api/instancetype"
+	virtstorage "kubevirt.io/api/storage"
 
 	"kubevirt.io/kubevirt/pkg/virt-operator/resource/generate/components"
 
@@ -129,6 +130,17 @@ func newApiServerClusterRole() *rbacv1.ClusterRole {
 				},
 				Resources: []string{
 					"virtualmachineinstancemigrations",
+				},
+				Verbs: []string{
+					"create", "get", "list", "watch", "patch",
+				},
+			},
+			{
+				APIGroups: []string{
+					virtstorage.GroupName,
+				},
+				Resources: []string{
+					"storagemigrations",
 				},
 				Verbs: []string{
 					"create", "get", "list", "watch", "patch",
