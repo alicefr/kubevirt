@@ -247,3 +247,13 @@ func RenderPVC(size *resource.Quantity, claimName, namespace, storageClass, acce
 
 	return pvc
 }
+
+func IsMigratedVolume(name string, vmi *virtv1.VirtualMachineInstance) bool {
+	for _, v := range vmi.Status.MigratedVolumes {
+		if v.SourcePvc == name {
+			return true
+		}
+	}
+	return false
+
+}
