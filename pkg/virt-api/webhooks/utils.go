@@ -29,10 +29,11 @@ import (
 	poolv1 "kubevirt.io/api/pool/v1alpha1"
 	"kubevirt.io/client-go/log"
 
-	"kubevirt.io/kubevirt/pkg/virt-operator/resource/generate/components"
-
 	v1 "kubevirt.io/api/core/v1"
+	virtstoragev1alpha1 "kubevirt.io/api/storage/v1alpha1"
 	clientutil "kubevirt.io/client-go/util"
+
+	"kubevirt.io/kubevirt/pkg/virt-operator/resource/generate/components"
 )
 
 var Arch = runtime.GOARCH
@@ -71,6 +72,12 @@ var MigrationGroupVersionResource = metav1.GroupVersionResource{
 	Group:    v1.VirtualMachineInstanceMigrationGroupVersionKind.Group,
 	Version:  v1.VirtualMachineInstanceMigrationGroupVersionKind.Version,
 	Resource: "virtualmachineinstancemigrations",
+}
+
+var StorageMigrationGroupVersionResource = metav1.GroupVersionResource{
+	Group:    virtstoragev1alpha1.StorageMigrationKind.Group,
+	Version:  virtstoragev1alpha1.StorageMigrationKind.Version,
+	Resource: "storagemigrations",
 }
 
 type Informers struct {
