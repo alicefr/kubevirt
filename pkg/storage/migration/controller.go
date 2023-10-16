@@ -19,11 +19,15 @@ import (
 
 	k8score "k8s.io/api/core/v1"
 
+	storagetypes "kubevirt.io/kubevirt/pkg/storage/types"
+
 	"kubevirt.io/kubevirt/pkg/controller"
 )
 
 const failedToProcessDeleteNotificationErrMsg = "Failed to process delete notification"
 const labelStorageMigration = "storage.kubevirt.io/migration"
+
+const DefaulReclaimPolicySourcePvc = virtstoragev1alpha1.DeleteReclaimPolicySourcePvc
 
 type StorageMigrationController struct {
 	Queue                    workqueue.RateLimitingInterface
@@ -32,16 +36,18 @@ type StorageMigrationController struct {
 	vmiInformer              cache.SharedIndexInformer
 	migrationInformer        cache.SharedIndexInformer
 	vmInformer               cache.SharedIndexInformer
+	pvcInformer              cache.SharedIndexInformer
 	expectations             *controller.UIDTrackingControllerExpectations
 }
 
-func NewStorageMigrationController(clientset kubecli.KubevirtClient, storageMigrationInformer cache.SharedIndexInformer, migrationInformer cache.SharedIndexInformer, vmiInformer cache.SharedIndexInformer, vmInformer cache.SharedIndexInformer) (*StorageMigrationController, error) {
+func NewStorageMigrationController(clientset kubecli.KubevirtClient, storageMigrationInformer cache.SharedIndexInformer, migrationInformer cache.SharedIndexInformer, vmiInformer cache.SharedIndexInformer, vmInformer cache.SharedIndexInformer, pvcInformer cache.SharedIndexInformer) (*StorageMigrationController, error) {
 	c := &StorageMigrationController{
 		Queue:                    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "virt-controller-storage-migration"),
 		clientset:                clientset,
 		storageMigrationInformer: storageMigrationInformer,
 		vmiInformer:              vmiInformer,
 		vmInformer:               vmInformer,
+		pvcInformer:              pvcInformer,
 		migrationInformer:        migrationInformer,
 	}
 
@@ -199,6 +205,33 @@ func (c *StorageMigrationController) updateVMIStatusWithMigratedDisksPatch(stora
 		}
 	}
 
+	return nil
+}
+
+func (c *StorageMigrationController) handleSourceVolumes(sm *virtstoragev1alpha1.StorageMigration, vmi *virtv1.VirtualMachineInstance) error {
+	policy := sm.Spec.ReclaimPolicySourcePvc
+	if policy == "" {
+		policy = DefaulReclaimPolicySourcePvc
+	}
+	for _, migVol := range sm.Status {
+		pvc, err := storagetypes.GetPersistentVolumeClaimFromCache(sm.ObjectMeta.Namespace, migVol.SourcePvc, c.pvcInformer)
+		if err != nil {
+			return err
+		}
+		if pvc == nil {
+			continue
+		}
+
+		switch policy {
+		case DeleteReclaimPolicySourcePvc:
+			_, err := c.clientset.CoreV1().PeristentVolumeClaims(sm.ObjectMeta.Namespace).Delete(context.Background(), pvc.Name, metav1.DeleteOptions{})
+			if err != nil {
+				return fmt.Errorf("failed delete source PVC %s: %v", pvc.Name, err)
+			}
+		default:
+			return fmt.Errorf("Reclaim policy %s not recognized", policy)
+		}
+	}
 	return nil
 }
 
@@ -372,6 +405,7 @@ func (c *StorageMigrationController) execute(key string) error {
 	// If the migration completed then update the VMI and VM spec
 	if mig.Status.MigrationState != nil && mig.Status.MigrationState.Completed {
 		c.updateVMIWithMigrationVolumes(vmi, sm)
+		c.handleSourceVolumes(sm, vmi)
 	}
 
 	// If the VMI has a VM controller, then update the VM spec consequentially

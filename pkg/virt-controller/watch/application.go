@@ -642,7 +642,7 @@ func (vca *VirtControllerApp) initCommon() {
 		panic(err)
 	}
 
-	vca.storageMigrationController, err = storageMig.NewStorageMigrationController(vca.clientSet, vca.storageMigrationInformer, vca.migrationInformer, vca.vmiInformer, vca.vmInformer)
+	vca.storageMigrationController, err = storageMig.NewStorageMigrationController(vca.clientSet, vca.storageMigrationInformer, vca.migrationInformer, vca.vmiInformer, vca.vmInformer, vca.persistentVolumeClaimInformer)
 	if err != nil {
 		panic(err)
 	}
