@@ -4281,19 +4281,19 @@ var _ = Describe("Template", func() {
 			)
 
 		})
-		Context("with configmap in VMI annotations for generic sidecar", func() {
+		Context("with configmap in VMI annotations for sidecar shim", func() {
 			var vmi *v1.VirtualMachineInstance
 
 			BeforeEach(func() {
-				vmi = api.NewMinimalVMI("generic-sidecar-test")
+				vmi = api.NewMinimalVMI("sidecar-configmap-test")
 				vmi.Annotations = map[string]string{
-					hooks.HookSidecarListAnnotationName: `[{"image": "test:test", "configMap": {"name": "test-cm", "key": "script.sh"}}]`,
+					hooks.HookSidecarListAnnotationName: `[{"image": "test:test", "configMap": {"name": "test-cm", 
+"key": "script.sh", "hookPath": "/usr/bin/onDefineDomain"}}]`,
 				}
 			})
 			When("ConfigMap exists on the cluster", func() {
 				BeforeEach(func() {
 					k8sClient := k8sfake.NewSimpleClientset()
-					//virtClient.EXPECT().CoreV1().Return(cm).MaxTimes(1)
 					k8sClient.Fake.PrependReactor("get", "configmaps", func(action testing.Action) (handled bool, obj k8sruntime.Object, err error) {
 						cm := kubev1.ConfigMap{
 							ObjectMeta: metav1.ObjectMeta{
