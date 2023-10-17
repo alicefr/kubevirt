@@ -57,3 +57,13 @@ func UnmarshalHookSidecarList(vmiObject *v1.VirtualMachineInstance) (HookSidecar
 
 	return hookSidecarList, nil
 }
+
+func UnmarshalHookSidecarFromAnnotation(annotations string) (HookSidecarList, error) {
+	hookSidecarList := make(HookSidecarList, 0)
+
+	if err := json.Unmarshal([]byte(annotations), &hookSidecarList); err != nil {
+		return nil, err
+	}
+
+	return hookSidecarList, nil
+}

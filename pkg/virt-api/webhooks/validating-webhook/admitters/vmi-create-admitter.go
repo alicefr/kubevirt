@@ -20,6 +20,7 @@
 package admitters
 
 import (
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -29,6 +30,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"kubevirt.io/client-go/kubecli"
 
 	backendstorage "kubevirt.io/kubevirt/pkg/storage/backend-storage"
 
@@ -84,6 +87,13 @@ var restrictedVmiLabels = map[string]bool{
 	v1.MigrationTargetNodeNameLabel: true,
 	v1.NodeSchedulable:              true,
 	v1.InstallStrategyLabel:         true,
+}
+
+var kvClientFunc = getClient
+
+func getClient() kubecli.KubevirtClient {
+	client, _ := kubecli.GetKubevirtClient()
+	return client
 }
 
 const (
@@ -1736,6 +1746,27 @@ func ValidateVirtualMachineInstanceMetadata(field *k8sfield.Path, metadata *meta
 				field.Child("annotations", hooks.HookSidecarListAnnotationName).String()),
 			Field: field.Child("annotations").String(),
 		})
+	}
+
+	if annotations[hooks.HookSidecarListAnnotationName] != "" {
+		a := annotations[hooks.HookSidecarListAnnotationName]
+		hookSidecarList, _ := hooks.UnmarshalHookSidecarFromAnnotation(a)
+		for _, h := range hookSidecarList {
+			if h.ConfigMap != nil {
+				kvClient := kvClientFunc()
+				_, err := kvClient.CoreV1().ConfigMaps(metadata.Namespace).Get(context.TODO(), h.ConfigMap.Name,
+					metav1.GetOptions{})
+				if err != nil {
+					causes = append(causes, metav1.StatusCause{
+						Type: metav1.CauseTypeFieldValueInvalid,
+						Message: fmt.Sprintf("ConfigMap %q does not exist, invalid entry %s",
+							h.ConfigMap.Name,
+							field.Child("annotations", hooks.HookSidecarListAnnotationName).String()),
+						Field: field.Child("annotations").String(),
+					})
+				}
+			}
+		}
 	}
 
 	if threadCountStr, exists := metadata.Annotations[cmdclient.MultiThreadedQemuMigrationAnnotation]; exists {

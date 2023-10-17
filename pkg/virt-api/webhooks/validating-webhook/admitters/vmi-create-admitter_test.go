@@ -25,6 +25,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/golang/mock/gomock"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
+	"k8s.io/client-go/testing"
+	"kubevirt.io/client-go/kubecli"
+
 	cmdclient "kubevirt.io/kubevirt/pkg/virt-handler/cmd-client"
 
 	"kubevirt.io/client-go/api"
@@ -502,6 +507,66 @@ var _ = Describe("Validating VMICreate Admitter", func() {
 		)
 	})
 
+	Context("sidecar shim with scripts in configmap", func() {
+		var vmi *v1.VirtualMachineInstance
+		var k8sClient *k8sfake.Clientset
+
+		BeforeEach(func() {
+			vmi = api.NewMinimalVMI("sidecar-shim-configmap-test")
+			vmi.Annotations = map[string]string{
+				hooks.HookSidecarListAnnotationName: `[{"image": "test:test", "configMap": {"name": "test-cm", "key": "script.sh", "hookPath": "path"}}]`,
+			}
+			k8sClient = k8sfake.NewSimpleClientset()
+
+			enableFeatureGate(virtconfig.SidecarGate)
+		})
+		When("configmap exists on the cluster", func() {
+
+			BeforeEach(func() {
+				kvClientFunc = func() kubecli.KubevirtClient {
+					k8sClient.Fake.PrependReactor("get", "configmaps", func(action testing.Action) (handled bool, obj runtime.Object, err error) {
+						cm := k8sv1.ConfigMap{
+							ObjectMeta: metav1.ObjectMeta{
+								Name: "test-cm",
+							},
+							Data: map[string]string{"script.sh": "some-script"},
+						}
+						return true, &cm, nil
+					})
+
+					ctrl := gomock.NewController(GinkgoT())
+					client := kubecli.NewMockKubevirtClient(ctrl)
+					client.EXPECT().CoreV1().Return(k8sClient.CoreV1()).AnyTimes()
+
+					return client
+				}
+			})
+			It("should pass", func() {
+				causes := ValidateVirtualMachineInstanceMetadata(k8sfield.NewPath("metadata"), &vmi.ObjectMeta, config, "fake-account")
+				Expect(causes).To(BeEmpty())
+			})
+		})
+
+		When("configmap does not exist on the cluster", func() {
+			BeforeEach(func() {
+				kvClientFunc = func() kubecli.KubevirtClient {
+					ctrl := gomock.NewController(GinkgoT())
+					client := kubecli.NewMockKubevirtClient(ctrl)
+					client.EXPECT().CoreV1().Return(k8sClient.CoreV1()).AnyTimes()
+					return client
+				}
+			})
+			It("should fail", func() {
+				causes := ValidateVirtualMachineInstanceMetadata(k8sfield.NewPath("metadata"), &vmi.ObjectMeta, config, "fake-account")
+				Expect(causes).To(HaveLen(1))
+
+				c := causes[0]
+				Expect(string(c.Type)).To(Equal("FieldValueInvalid"))
+				Expect(c.Field).To(Equal("metadata.annotations"))
+				Expect(c.Message).To(ContainSubstring("invalid entry metadata.annotations.hooks.kubevirt.io/hookSidecars"))
+			})
+		})
+	})
 	Context("with VirtualMachineInstance spec", func() {
 		It("should accept valid machine type", func() {
 			vmi := api.NewMinimalVMI("testvmi")
