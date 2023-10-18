@@ -499,6 +499,29 @@ func (t *templateService) renderLaunchManifest(vmi *v1.VirtualMachineInstance, i
 			}
 			sidecarVolumes = append(sidecarVolumes, vol)
 		}
+		if requestedHookSidecar.PVC != nil {
+			pvc, err := t.virtClient.CoreV1().PersistentVolumeClaims(vmi.Namespace).Get(context.TODO(), requestedHookSidecar.PVC.Name, metav1.GetOptions{})
+			if err != nil {
+				return nil, err
+			}
+			volumeSource := k8sv1.VolumeSource{
+				PersistentVolumeClaim: &k8sv1.PersistentVolumeClaimVolumeSource{
+					ClaimName: pvc.Name,
+				},
+			}
+			vol := k8sv1.Volume{
+				Name:         pvc.Name,
+				VolumeSource: volumeSource,
+			}
+			sidecarVolumes = append(sidecarVolumes, vol)
+			if requestedHookSidecar.PVC.SharedComputePath != "" {
+				containers[0].VolumeMounts = append(containers[0].VolumeMounts,
+					k8sv1.VolumeMount{
+						Name:      pvc.Name,
+						MountPath: requestedHookSidecar.PVC.SharedComputePath,
+					})
+			}
+		}
 		containers = append(containers, sidecarContainer)
 	}
 
@@ -662,11 +685,15 @@ func newSidecarContainerRenderer(sidecarName string, vmiSpec *v1.VirtualMachineI
 		WithArgs(requestedHookSidecar.Args),
 	}
 
+	var mounts []k8sv1.VolumeMount
+	mounts = append(mounts, sidecarVolumeMount())
 	if requestedHookSidecar.ConfigMap != nil {
-		sidecarOpts = append(sidecarOpts, WithVolumeMounts(sidecarVolumeMount(), configMapVolumeMount(*requestedHookSidecar.ConfigMap)))
-	} else {
-		sidecarOpts = append(sidecarOpts, WithVolumeMounts(sidecarVolumeMount()))
+		mounts = append(mounts, configMapVolumeMount(*requestedHookSidecar.ConfigMap))
 	}
+	if requestedHookSidecar.PVC != nil {
+		mounts = append(mounts, pvcVolumeMount(*requestedHookSidecar.PVC))
+	}
+	sidecarOpts = append(sidecarOpts, WithVolumeMounts(mounts...))
 
 	if util.IsNonRootVMI(vmiSpec) {
 		sidecarOpts = append(sidecarOpts, WithNonRoot(userId))
@@ -793,6 +820,13 @@ func configMapVolumeMount(v hooks.ConfigMap) k8sv1.VolumeMount {
 		Name:      v.Name,
 		MountPath: v.HookPath,
 		SubPath:   v.Key,
+	}
+}
+
+func pvcVolumeMount(v hooks.PVC) k8sv1.VolumeMount {
+	return k8sv1.VolumeMount{
+		Name:      v.Name,
+		MountPath: v.VolumePath,
 	}
 }
 
