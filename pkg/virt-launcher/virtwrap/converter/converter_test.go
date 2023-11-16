@@ -1698,6 +1698,7 @@ var _ = Describe("Converter", func() {
 			Expect(reserv.SourceReservations.Type).To(Equal("unix"))
 			Expect(reserv.SourceReservations.Path).To(Equal("/var/run/kubevirt/daemons/pr/pr-helper.sock"))
 			Expect(reserv.SourceReservations.Mode).To(Equal("client"))
+			Expect(domainSpec.Devices.Disks[0].Driver.ErrorPolicy).To(Equal("report"))
 		})
 
 		It("should add a virtio-scsi controller if a scsci disk is present and iothreads set", func() {
