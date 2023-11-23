@@ -18635,6 +18635,9 @@
        "$ref": "#/definitions/k8s.io.apimachinery.pkg.api.resource.Quantity"
       }
      },
+     "claimName": {
+      "type": "string"
+     },
      "filesystemOverhead": {
       "description": "Percentage of filesystem's size to be reserved when resizing the PVC",
       "type": "string"
@@ -21177,7 +21180,12 @@
      "destinationPvc": {
       "type": "string"
      },
+     "reclaimPolicySourcePvc": {
+      "description": "ReclaimPolicySourcePvc describes how the source volumes will be treated after a successful migration",
+      "type": "string"
+     },
      "sourcePvc": {
+      "description": "\tVMIName        string `json:\"vmiName,omitempty\" valid:\"required\"`",
       "type": "string"
      }
     }
