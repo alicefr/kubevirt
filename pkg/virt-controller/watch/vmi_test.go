@@ -2727,6 +2727,7 @@ var _ = Describe("VirtualMachineInstance watcher", func() {
 					Message: truncateSprintf(message, index, index),
 					Reason:  reason,
 					PersistentVolumeClaimInfo: &virtv1.PersistentVolumeClaimInfo{
+						ClaimName: fmt.Sprintf("claim%d", index),
 						AccessModes: []k8sv1.PersistentVolumeAccessMode{
 							k8sv1.ReadOnlyMany,
 						},
