@@ -18677,6 +18677,9 @@
    "v1.PersistentVolumeClaimInfo": {
     "description": "PersistentVolumeClaimInfo contains the relavant information virt-handler needs cached about a PVC",
     "type": "object",
+    "required": [
+     "claimName"
+    ],
     "properties": {
      "accessModes": {
       "description": "AccessModes contains the desired access modes the volume should have. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes-1",
@@ -18694,6 +18697,11 @@
        "default": {},
        "$ref": "#/definitions/k8s.io.apimachinery.pkg.api.resource.Quantity"
       }
+     },
+     "claimName": {
+      "description": "ClaimName is the name of the PVC",
+      "type": "string",
+      "default": ""
      },
      "filesystemOverhead": {
       "description": "Percentage of filesystem's size to be reserved when resizing the PVC",

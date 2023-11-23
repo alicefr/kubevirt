@@ -12855,6 +12855,9 @@ var CRDsValidation map[string]string = map[string]string{
                     description: Capacity represents the capacity set on the corresponding
                       PVC status
                     type: object
+                  claimName:
+                    description: ClaimName is the name of the PVC
+                    type: string
                   filesystemOverhead:
                     description: Percentage of filesystem's size to be reserved when
                       resizing the PVC
@@ -12879,6 +12882,8 @@ var CRDsValidation map[string]string = map[string]string{
                       VolumeMode defines what type of volume is required by the claim.
                       Value of Filesystem is implied when not included in claim spec.
                     type: string
+                required:
+                - claimName
                 type: object
               phase:
                 description: Phase is the phase
