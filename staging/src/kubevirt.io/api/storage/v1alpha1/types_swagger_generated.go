@@ -34,12 +34,17 @@ func (StorageMigrationState) SwaggerDoc() map[string]string {
 	return map[string]string{
 		"":                            "StorageMigrationState is the status for a StorageMigration resource",
 		"migratedVolume":              "MigratedVolumes is a list of volumes to be migrated\n+optional",
-		"virtualMachineMigrationName": "VirtualMachineMigrationState state of the virtual machine migration\ntriggered by the storage migration\n+optional",
+		"virtualMachineMigrationName": "VirtualMachineMigrationName state of the virtual machine migration\ntriggered by the storage migration\n+optional",
+		"virtualMachineInstanceName":  "VirtualMachineMigrationState state of the virtual machine migration\ntriggered by the storage migration\n+optional",
 		"completed":                   "+optional",
 		"failed":                      "+optional",
+		"startTimestamp":              "The time the migration action began\n+nullable",
+		"endTimestamp":                "The time the migration action ended\n+nullable",
 	}
 }
 
 func (StorageMigrationStatus) SwaggerDoc() map[string]string {
-	return map[string]string{}
+	return map[string]string{
+		"": "+kubebuilder:printcolumn:JSONPath=\".status.total\",name=\"Total\",type=\"integer\"\n+kubebuilder:printcolumn:JSONPath=\".status.failed\",name=\"Failed\",type=\"integer\"\n+kubebuilder:printcolumn:JSONPath=\".status.completed\",name=\"Completed\",type=\"integer\"\n+kubebuilder:printcolumn:JSONPath=\".status.notStarted\",name=\"NotStarted\",type=\"integer\"\n+kubebuilder:printcolumn:JSONPath=\".status.running\",name=\"Running\",type=\"integer\"",
+	}
 }

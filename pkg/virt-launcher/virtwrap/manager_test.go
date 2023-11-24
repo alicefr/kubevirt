@@ -32,8 +32,6 @@ import (
 	"strings"
 	"time"
 
-	storagev1alpha1 "kubevirt.io/api/storage/v1alpha1"
-
 	"kubevirt.io/kubevirt/pkg/testutils"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
 
@@ -2642,12 +2640,50 @@ var _ = Describe("migratableDomXML", func() {
 					},
 				},
 			})
-		vmi.Status.MigratedVolumes = []storagev1alpha1.MigratedVolume{
+		vmi.Status.MigratedVolumes = []v1.StorageMigratedVolumeInfo{
 			{
 				SourcePvc:      sourcePvcName,
 				DestinationPvc: destPvcName,
 			},
 		}
+		mockDomain.EXPECT().GetXMLDesc(libvirt.DOMAIN_XML_MIGRATABLE).MaxTimes(1).Return(domXML, nil)
+		domSpec := &api.DomainSpec{}
+		Expect(xml.Unmarshal([]byte(domXML), domSpec)).To(Succeed())
+		newXML, err := migratableDomXML(mockDomain, vmi, domSpec)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(newXML).To(Equal(expectedXML))
+	})
+	It("should generate correct xml for user data for copied disks during the migration", func() {
+		domXML := `<domain type="kvm" id="1">
+  <name>kubevirt</name>
+  <devices>
+    <disk type='file' device='disk' model='virtio-non-transitional'>
+      <driver name='qemu' type='raw' cache='none' error_policy='stop' discard='unmap'/>
+      <source file='/var/run/kubevirt-ephemeral-disks/cloud-init-data/default/vm-dv/noCloud.iso' index='1'/>
+      <backingStore/>
+      <target dev='vda' bus='virtio'/>
+      <alias name='ua-cloudinitdisk'/>
+      <address type='pci' domain='0x0000' bus='0x07' slot='0x00' function='0x0'/>
+    </disk>
+  </devices>
+</domain>`
+		expectedXML := `<domain type="kvm" id="1">
+  <name>kubevirt</name>
+  <devices>
+    <disk type="file" device="disk" model="virtio-non-transitional">
+      <driver name="qemu" type="raw" cache="none" error_policy="stop" discard="unmap"></driver>
+      <source file="/var/run/kubevirt-ephemeral-disks/cloud-init-data/default/vm-dv/noCloud.iso" index="1"></source>
+      <backingStore></backingStore>
+      <target dev="vda" bus="virtio"></target>
+      <alias name="ua-cloudinitdisk"></alias>
+      <address type="pci" domain="0x0000" bus="0x07" slot="0x00" function="0x0"></address>
+    </disk>
+  </devices>
+</domain>`
+		vmi := newVMI("testns", "kubevirt")
+		userData := "fake\nuser\ndata\n"
+		networkData := "FakeNetwork"
+		addCloudInitDisk(vmi, userData, networkData)
 		mockDomain.EXPECT().GetXMLDesc(libvirt.DOMAIN_XML_MIGRATABLE).MaxTimes(1).Return(domXML, nil)
 		domSpec := &api.DomainSpec{}
 		Expect(xml.Unmarshal([]byte(domXML), domSpec)).To(Succeed())

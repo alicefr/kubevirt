@@ -1183,13 +1183,6 @@ spec:
           - list
           - watch
         - apiGroups:
-          - kubevirt.io
-          resources:
-          - kubevirts
-          verbs:
-          - get
-          - list
-        - apiGroups:
           - storage.kubevirt.io
           resources:
           - storagemigrations
@@ -1197,6 +1190,13 @@ spec:
           - get
           - list
           - watch
+        - apiGroups:
+          - kubevirt.io
+          resources:
+          - kubevirts
+          verbs:
+          - get
+          - list
         - apiGroups:
           - subresources.kubevirt.io
           resources:

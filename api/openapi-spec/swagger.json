@@ -19261,6 +19261,20 @@
      }
     }
    },
+   "v1.StorageMigratedVolumeInfo": {
+    "type": "object",
+    "properties": {
+     "destinationPVCInfo": {
+      "$ref": "#/definitions/v1.PersistentVolumeClaimInfo"
+     },
+     "destinationPvc": {
+      "type": "string"
+     },
+     "sourcePvc": {
+      "type": "string"
+     }
+    }
+   },
    "v1.SupportContainerResources": {
     "description": "SupportContainerResources are used to specify the cpu/memory request and limits for the containers that support various features of Virtual Machines. These containers are usually idle and don't require a lot of memory or cpu.",
     "type": "object",
@@ -20618,7 +20632,7 @@
       "type": "array",
       "items": {
        "default": {},
-       "$ref": "#/definitions/v1alpha1.MigratedVolume"
+       "$ref": "#/definitions/v1.StorageMigratedVolumeInfo"
       }
      },
      "migrationMethod": {
@@ -21171,22 +21185,6 @@
      },
      "time": {
       "$ref": "#/definitions/k8s.io.apimachinery.pkg.apis.meta.v1.Time"
-     }
-    }
-   },
-   "v1alpha1.MigratedVolume": {
-    "type": "object",
-    "properties": {
-     "destinationPvc": {
-      "type": "string"
-     },
-     "reclaimPolicySourcePvc": {
-      "description": "ReclaimPolicySourcePvc describes how the source volumes will be treated after a successful migration",
-      "type": "string"
-     },
-     "sourcePvc": {
-      "description": "\tVMIName        string `json:\"vmiName,omitempty\" valid:\"required\"`",
-      "type": "string"
      }
     }
    },

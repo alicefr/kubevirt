@@ -34,8 +34,6 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
-
-	storagev1alpha1 "kubevirt.io/api/storage/v1alpha1"
 )
 
 const DefaultGracePeriodSeconds int64 = 30
@@ -286,8 +284,14 @@ type VirtualMachineInstanceStatus struct {
 
 	// Memory shows various informations about the VirtualMachine memory.
 	// +optional
-	Memory          *MemoryStatus                    `json:"memory,omitempty"`
-	MigratedVolumes []storagev1alpha1.MigratedVolume `json:"migratedVolumes,omitempty"`
+	Memory          *MemoryStatus               `json:"memory,omitempty"`
+	MigratedVolumes []StorageMigratedVolumeInfo `json:"migratedVolumes,omitempty"`
+}
+
+type StorageMigratedVolumeInfo struct {
+	SourcePvc          string                     `json:"sourcePvc,omitempty" valid:"required"`
+	DestinationPvc     string                     `json:"destinationPvc,omitempty" valid:"required"`
+	DestinationPVCInfo *PersistentVolumeClaimInfo `json:"destinationPVCInfo,omitempty" valid:"required"`
 }
 
 // PersistentVolumeClaimInfo contains the relavant information virt-handler needs cached about a PVC

@@ -135,6 +135,14 @@ func (in *StorageMigrationState) DeepCopyInto(out *StorageMigrationState) {
 		*out = make([]MigratedVolume, len(*in))
 		copy(*out, *in)
 	}
+	if in.StartTimestamp != nil {
+		in, out := &in.StartTimestamp, &out.StartTimestamp
+		*out = (*in).DeepCopy()
+	}
+	if in.EndTimestamp != nil {
+		in, out := &in.EndTimestamp, &out.EndTimestamp
+		*out = (*in).DeepCopy()
+	}
 	return
 }
 

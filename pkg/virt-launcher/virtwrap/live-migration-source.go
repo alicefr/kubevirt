@@ -451,9 +451,11 @@ func classifyVolumesForMigration(vmi *v1.VirtualMachineInstance) *migrationDisks
 		case volSrc.ConfigMap != nil || volSrc.Secret != nil || volSrc.DownwardAPI != nil ||
 			volSrc.ServiceAccount != nil || volSrc.CloudInitNoCloud != nil ||
 			volSrc.CloudInitConfigDrive != nil || volSrc.ContainerDisk != nil:
+			fmt.Printf("XXX Generated vol:%s\n", volume.Name)
 			disks.generated[volume.Name] = true
 		}
 	}
+	fmt.Printf("XXXX classifyVolumes:%v\n", disks)
 	return disks
 }
 
@@ -476,11 +478,13 @@ func getDiskTargetsForMigration(dom cli.VirDomain, vmi *v1.VirtualMachineInstanc
 		if disk.ReadOnly != nil && !migrationVols.isGeneratedVolume(disk.Alias.GetName()) {
 			continue
 		}
+		fmt.Printf("XXX name: %s target device: %s\n", disk.Alias.GetName(), disk.Target.Device)
 		if (disk.Type != "file" && disk.Type != "block") || migrationVols.isSharedVolume(disk.Alias.GetName()) {
 			continue
 		}
 		copyDisks = append(copyDisks, disk.Target.Device)
 	}
+	fmt.Printf("XXX copyDisks:%v\n", copyDisks)
 	return copyDisks
 }
 

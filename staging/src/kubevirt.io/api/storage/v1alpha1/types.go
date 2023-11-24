@@ -20,6 +20,8 @@
 package v1alpha1
 
 import (
+	"fmt"
+
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
@@ -77,16 +79,52 @@ type StorageMigrationState struct {
 	// MigratedVolumes is a list of volumes to be migrated
 	// +optional
 	MigratedVolume []MigratedVolume `json:"migratedVolume,omitempty"`
-	// VirtualMachineMigrationState state of the virtual machine migration
+	// VirtualMachineMigrationName state of the virtual machine migration
 	// triggered by the storage migration
 	// +optional
 	VirtualMachineMigrationName string `json:"virtualMachineMigrationName,omitempty"`
+	// VirtualMachineMigrationState state of the virtual machine migration
+	// triggered by the storage migration
+	// +optional
+	VirtualMachineInstanceName string `json:"virtualMachineInstanceName,omitempty"`
 	// +optional
 	Completed bool `json:"completed,omitempty"`
 	// +optional
 	Failed bool `json:"failed,omitempty"`
+	// The time the migration action began
+	// +nullable
+	StartTimestamp *metav1.Time `json:"startTimestamp,omitempty"`
+	// The time the migration action ended
+	// +nullable
+	EndTimestamp *metav1.Time `json:"endTimestamp,omitempty"`
 }
 
+// +kubebuilder:printcolumn:JSONPath=".status.total",name="Total",type="integer"
+// +kubebuilder:printcolumn:JSONPath=".status.failed",name="Failed",type="integer"
+// +kubebuilder:printcolumn:JSONPath=".status.completed",name="Completed",type="integer"
+// +kubebuilder:printcolumn:JSONPath=".status.notStarted",name="NotStarted",type="integer"
+// +kubebuilder:printcolumn:JSONPath=".status.running",name="Running",type="integer"
 type StorageMigrationStatus struct {
 	StorageMigrationStates []StorageMigrationState `json:"storageMigrationStates,omitempty"`
+	Total                  int                     `json:"total,omitempty"`
+	Failed                 int                     `json:"failed,omitempty"`
+	Completed              int                     `json:"completed,omitempty"`
+	NotStarted             int                     `json:"notStarted,omitempty"`
+	Running                int                     `json:"running,omitempty"`
+}
+
+func (sm *StorageMigration) GetStorageMigrationStateForVMI(vmiName string) *StorageMigrationState {
+	if sm.Status == nil {
+		return nil
+	}
+	for _, s := range sm.Status.StorageMigrationStates {
+		if s.VirtualMachineInstanceName == vmiName {
+			return &s
+		}
+	}
+	return nil
+}
+
+func (sm *StorageMigration) GetVirtualMachiheInstanceMigrationName(vmiName string) string {
+	return fmt.Sprintf("%s-%s", sm.Name, vmiName)
 }

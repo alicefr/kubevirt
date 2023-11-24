@@ -6,23 +6,25 @@ import (
 	"fmt"
 	"time"
 
+	k8score "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
+	v1 "kubevirt.io/api/core/v1"
 	virtv1 "kubevirt.io/api/core/v1"
 	virtstoragev1alpha1 "kubevirt.io/api/storage/v1alpha1"
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
+	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
 
-	k8score "k8s.io/api/core/v1"
+	storagetypes "kubevirt.io/kubevirt/pkg/storage/types"
 
 	"kubevirt.io/kubevirt/pkg/controller"
 )
 
-const failedToProcessDeleteNotificationErrMsg = "Failed to process delete notification"
 const labelStorageMigration = "storage.kubevirt.io/migration"
 
 type StorageMigrationController struct {
@@ -32,10 +34,22 @@ type StorageMigrationController struct {
 	vmiInformer              cache.SharedIndexInformer
 	migrationInformer        cache.SharedIndexInformer
 	vmInformer               cache.SharedIndexInformer
-	expectations             *controller.UIDTrackingControllerExpectations
+	pvcInformer              cache.SharedIndexInformer
+	cdiInformer              cache.SharedIndexInformer
+	cdiConfigInformer        cache.SharedIndexInformer
+
+	expectations *controller.UIDTrackingControllerExpectations
 }
 
-func NewStorageMigrationController(clientset kubecli.KubevirtClient, storageMigrationInformer cache.SharedIndexInformer, migrationInformer cache.SharedIndexInformer, vmiInformer cache.SharedIndexInformer, vmInformer cache.SharedIndexInformer) (*StorageMigrationController, error) {
+func NewStorageMigrationController(clientset kubecli.KubevirtClient,
+	storageMigrationInformer cache.SharedIndexInformer,
+	migrationInformer cache.SharedIndexInformer,
+	vmiInformer cache.SharedIndexInformer,
+	vmInformer cache.SharedIndexInformer,
+	pvcInformer cache.SharedIndexInformer,
+	cdiInformer cache.SharedIndexInformer,
+	cdiConfigInformer cache.SharedIndexInformer,
+) (*StorageMigrationController, error) {
 	c := &StorageMigrationController{
 		Queue:                    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), "virt-controller-storage-migration"),
 		clientset:                clientset,
@@ -43,6 +57,9 @@ func NewStorageMigrationController(clientset kubecli.KubevirtClient, storageMigr
 		vmiInformer:              vmiInformer,
 		vmInformer:               vmInformer,
 		migrationInformer:        migrationInformer,
+		pvcInformer:              pvcInformer,
+		cdiInformer:              cdiInformer,
+		cdiConfigInformer:        cdiConfigInformer,
 	}
 
 	_, err := c.storageMigrationInformer.AddEventHandler(cache.ResourceEventHandlerFuncs{
@@ -59,10 +76,6 @@ func NewStorageMigrationController(clientset kubecli.KubevirtClient, storageMigr
 		DeleteFunc: c.deleteMigration,
 		UpdateFunc: c.updateMigration,
 	})
-	if err != nil {
-		return nil, err
-	}
-
 	if err != nil {
 		return nil, err
 	}
@@ -139,52 +152,126 @@ func (c *StorageMigrationController) triggerVirtualMachineInstanceMigration(migV
 	return nil
 }
 
-func (c *StorageMigrationController) updateStatusStorageMigration(sm *virtstoragev1alpha1.StorageMigration, vmiMig *virtv1.VirtualMachineInstanceMigration) error {
+func (c *StorageMigrationController) updateStatusStorageMigration(sm *virtstoragev1alpha1.StorageMigration, vmiMig *virtv1.VirtualMachineInstanceMigration, migVols []virtstoragev1alpha1.MigratedVolume) (*virtstoragev1alpha1.StorageMigration, error) {
+	countStates := func(status *virtstoragev1alpha1.StorageMigrationStatus, f func(s *virtstoragev1alpha1.StorageMigrationState) bool) int {
+		count := 0
+		for _, s := range status.StorageMigrationStates {
+			if f(&s) {
+				count++
+			}
+		}
+		return count
+	}
+
 	var err error
 	found := false
 	smCopy := sm.DeepCopy()
 	if vmiMig.Status.MigrationState == nil {
-		return nil
+		return nil, nil
 	}
 	if smCopy.Status == nil {
 		smCopy.Status = &virtstoragev1alpha1.StorageMigrationStatus{}
 	}
 
-	for _, state := range smCopy.Status.StorageMigrationStates {
-		if state.VirtualMachineMigrationName == vmiMig.Spec.VMIName {
+	// First, update the migration details for the VMI
+	s := virtstoragev1alpha1.StorageMigrationState{
+		VirtualMachineMigrationName: vmiMig.Name,
+		VirtualMachineInstanceName:  vmiMig.Spec.VMIName,
+		MigratedVolume:              migVols,
+		Completed:                   vmiMig.Status.MigrationState.Completed,
+		Failed:                      vmiMig.Status.MigrationState.Failed,
+		StartTimestamp:              vmiMig.Status.MigrationState.StartTimestamp,
+		EndTimestamp:                vmiMig.Status.MigrationState.EndTimestamp,
+	}
+	for i, state := range smCopy.Status.StorageMigrationStates {
+		if state.VirtualMachineInstanceName == vmiMig.Spec.VMIName {
 			found = true
-			state.Completed = vmiMig.Status.MigrationState.Completed
-			state.Failed = vmiMig.Status.MigrationState.Failed
+			smCopy.Status.StorageMigrationStates[i] = s
 		}
 	}
-	// First update for the storage migration for this VMI
 	if !found {
-		smCopy.Status.StorageMigrationStates = append(smCopy.Status.StorageMigrationStates, virtstoragev1alpha1.StorageMigrationState{
-			VirtualMachineMigrationName: vmiMig.Spec.VMIName,
-			MigratedVolume:              sm.Spec.MigratedVolume,
-			Completed:                   vmiMig.Status.MigrationState.Completed,
-			Failed:                      vmiMig.Status.MigrationState.Failed,
-		})
+		smCopy.Status.StorageMigrationStates = append(smCopy.Status.StorageMigrationStates, s)
 	}
-	if _, err = c.clientset.StorageMigration(sm.ObjectMeta.Namespace).UpdateStatus(context.Background(), smCopy, metav1.UpdateOptions{}); err != nil {
-		return fmt.Errorf("failed updating storage migration %s: %v", sm.Name,
+	// Second, update the migration summary
+	smCopy.Status.Total = len(smCopy.Status.StorageMigrationStates)
+	smCopy.Status.Failed = countStates(smCopy.Status,
+		func(s *virtstoragev1alpha1.StorageMigrationState) bool {
+			return s.Failed == true
+		})
+	smCopy.Status.Running = countStates(smCopy.Status,
+		func(s *virtstoragev1alpha1.StorageMigrationState) bool {
+			return s.StartTimestamp != nil && s.EndTimestamp == nil && !s.Completed
+		})
+	smCopy.Status.NotStarted = countStates(smCopy.Status,
+		func(s *virtstoragev1alpha1.StorageMigrationState) bool {
+			return s.StartTimestamp == nil
+		})
+	smCopy.Status.Completed = countStates(smCopy.Status,
+		func(s *virtstoragev1alpha1.StorageMigrationState) bool {
+			return s.Completed
+		})
+	if smCopy, err = c.clientset.StorageMigration(sm.ObjectMeta.Namespace).UpdateStatus(context.Background(), smCopy, metav1.UpdateOptions{}); err != nil {
+		return nil, fmt.Errorf("failed updating storage migration %s: %v", sm.Name,
 			err)
 	}
-	sm = smCopy.DeepCopy()
 
-	return nil
+	return smCopy, nil
+}
+
+// TODO: create common function and avoid copying this from pkg/virt-controller/watch/vmi.go
+func (c *StorageMigrationController) getFilesystemOverhead(pvc *k8score.PersistentVolumeClaim) (cdiv1.Percent, error) {
+	// To avoid conflicts, we only allow having one CDI instance
+	if cdiInstances := len(c.cdiInformer.GetStore().List()); cdiInstances != 1 {
+		if cdiInstances > 1 {
+			log.Log.V(3).Object(pvc).Reason(storagetypes.ErrMultipleCdiInstances).Infof(storagetypes.FSOverheadMsg)
+		} else {
+			log.Log.V(3).Object(pvc).Reason(storagetypes.ErrFailedToFindCdi).Infof(storagetypes.FSOverheadMsg)
+		}
+		return storagetypes.DefaultFSOverhead, nil
+	}
+
+	cdiConfigInterface, cdiConfigExists, err := c.cdiConfigInformer.GetStore().GetByKey(storagetypes.ConfigName)
+	if !cdiConfigExists || err != nil {
+		return "0", fmt.Errorf("Failed to find CDIConfig but CDI exists: %w", err)
+	}
+	cdiConfig, ok := cdiConfigInterface.(*cdiv1.CDIConfig)
+	if !ok {
+		return "0", fmt.Errorf("Failed to convert CDIConfig object %v to type CDIConfig", cdiConfigInterface)
+	}
+
+	return storagetypes.GetFilesystemOverhead(pvc.Spec.VolumeMode, pvc.Spec.StorageClassName, cdiConfig), nil
 }
 
 func (c *StorageMigrationController) updateVMIStatusWithMigratedDisksPatch(migratedVolumes []virtstoragev1alpha1.MigratedVolume, vmi *virtv1.VirtualMachineInstance) error {
 	var ops []string
 	vmiCopy := vmi.DeepCopy()
 	// Always reinitialized the migrated disks
-	vmiCopy.Status.MigratedVolumes = []virtstoragev1alpha1.MigratedVolume{}
+	vmiCopy.Status.MigratedVolumes = []v1.StorageMigratedVolumeInfo{}
 	for _, d := range migratedVolumes {
+		pvcInterface, pvcExists, err := c.pvcInformer.GetStore().GetByKey(fmt.Sprintf("%s/%s", vmi.Namespace, d.DestinationPvc))
+		if !pvcExists {
+			return fmt.Errorf("failed getting information on the destination PVC %s: %v", d.DestinationPvc, err)
+		}
+		pvc := pvcInterface.(*k8score.PersistentVolumeClaim)
+		filesystemOverhead, err := c.getFilesystemOverhead(pvc)
+		if err != nil {
+			log.Log.Reason(err).Errorf("Failed to get filesystem overhead for PVC %s/%s", vmi.Namespace, d.DestinationPvc)
+			return err
+		}
 		vmiCopy.Status.MigratedVolumes = append(vmiCopy.Status.MigratedVolumes,
-			virtstoragev1alpha1.MigratedVolume{
+			v1.StorageMigratedVolumeInfo{
 				SourcePvc:      d.SourcePvc,
-				DestinationPvc: d.DestinationPvc})
+				DestinationPvc: d.DestinationPvc,
+				DestinationPVCInfo: &virtv1.PersistentVolumeClaimInfo{
+					ClaimName:          pvc.Name,
+					AccessModes:        pvc.Spec.AccessModes,
+					VolumeMode:         pvc.Spec.VolumeMode,
+					Capacity:           pvc.Status.Capacity,
+					Requests:           pvc.Spec.Resources.Requests,
+					Preallocated:       storagetypes.IsPreallocated(pvc.ObjectMeta.Annotations),
+					FilesystemOverhead: &filesystemOverhead,
+				},
+			})
 
 	}
 	if !equality.Semantic.DeepEqual(vmi.Status, vmiCopy.Status) {
@@ -208,9 +295,9 @@ func (c *StorageMigrationController) updateVMIStatusWithMigratedDisksPatch(migra
 	return nil
 }
 
-func replaceSourceVolswithDestinationVolVMI(storageMig *virtstoragev1alpha1.StorageMigration, vmi *virtv1.VirtualMachineInstance) error {
+func replaceSourceVolswithDestinationVolVMI(migVols []virtstoragev1alpha1.MigratedVolume, vmi *virtv1.VirtualMachineInstance) error {
 	replaceVol := make(map[string]string)
-	for _, v := range storageMig.Spec.MigratedVolume {
+	for _, v := range migVols {
 		replaceVol[v.SourcePvc] = v.DestinationPvc
 	}
 
@@ -246,16 +333,15 @@ func replaceSourceVolswithDestinationVolVMI(storageMig *virtstoragev1alpha1.Stor
 	return nil
 }
 
-func (c *StorageMigrationController) updateVMIWithMigrationVolumes(vmi *virtv1.VirtualMachineInstance, storageMig *virtstoragev1alpha1.StorageMigration) error {
+func (c *StorageMigrationController) updateVMIWithMigrationVolumes(vmi *virtv1.VirtualMachineInstance, migVols []virtstoragev1alpha1.MigratedVolume) (*virtv1.VirtualMachineInstance, error) {
 	vmiCopy := vmi.DeepCopy()
-	if err := replaceSourceVolswithDestinationVolVMI(storageMig, vmiCopy); err != nil {
-		return err
+	if err := replaceSourceVolswithDestinationVolVMI(migVols, vmiCopy); err != nil {
+		return nil, err
 	}
 	if _, err := c.clientset.VirtualMachineInstance(vmi.ObjectMeta.Namespace).Update(context.Background(), vmiCopy); err != nil {
-		return fmt.Errorf("failed updating migrated disks: %v", err)
+		return nil, fmt.Errorf("failed updating migrated disks: %v", err)
 	}
-	vmi = vmiCopy.DeepCopy()
-	return nil
+	return vmiCopy.DeepCopy(), nil
 }
 
 // TODO: replace this function with errors.Join available from golang 1.20
@@ -326,16 +412,15 @@ func (c *StorageMigrationController) replaceSourceVolswithDestinationVolVM(vm *v
 	return nil
 }
 
-func (c *StorageMigrationController) updateVMWithMigrationVolumes(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) error {
+func (c *StorageMigrationController) updateVMWithMigrationVolumes(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) (*virtv1.VirtualMachine, error) {
 	vmCopy := vm.DeepCopy()
 	if err := c.replaceSourceVolswithDestinationVolVM(vmCopy, vmi); err != nil {
-		return err
+		return nil, err
 	}
 	if _, err := c.clientset.VirtualMachine(vm.ObjectMeta.Namespace).Update(context.Background(), vmCopy); err != nil {
-		return fmt.Errorf("failed updating migrated disks: %v", err)
+		return nil, fmt.Errorf("failed updating migrated disks: %v", err)
 	}
-	vm = vmCopy.DeepCopy()
-	return nil
+	return vmCopy.DeepCopy(), nil
 }
 
 func (c *StorageMigrationController) cleanupVirtualMachineInstanceMigration(mig *virtv1.VirtualMachineInstanceMigration) error {
@@ -456,24 +541,25 @@ func (c *StorageMigrationController) executeStorageMigPerVMI(sm *virtstoragev1al
 	logger.V(1).Infof("Storage migration for volumes of VMI %s", vmi.Name)
 
 	// Check if the migration has already been triggered
-	migName := vmiName + "-storage-migration"
+	migName := sm.GetVirtualMachiheInstanceMigrationName(vmiName)
 	migObj, exists, err := c.migrationInformer.GetStore().GetByKey(fmt.Sprintf("%s/%s", ns, migName))
 	if err != nil {
 		return err
 	}
 	// Start the migration if it doesn't exist
 	if !exists {
-		logger.V(1).Infof("Start migration for VMI %s", vmi.Name)
+		logger.V(1).Infof("Start VM migration %s for VMI %s", migName, vmi.Name)
 		return c.triggerVirtualMachineInstanceMigration(migVols, vmiName, sm.Name, migName, ns)
 	}
 
+	var err1 error
 	mig := migObj.(*virtv1.VirtualMachineInstanceMigration)
-	if err := c.updateStatusStorageMigration(sm, mig); err != nil {
-		return err
+	if sm, err1 = c.updateStatusStorageMigration(sm, mig, migVols); err != nil {
+		return err1
 	}
 	if mig.Status.MigrationState != nil && mig.Status.MigrationState.Completed && !mig.Status.MigrationState.Failed {
 		logger.V(1).Infof("Migration completed VMI %s update the migrate volumes", vmi.Name)
-		if err := c.updateVMIWithMigrationVolumes(vmi, sm); err != nil {
+		if _, err := c.updateVMIWithMigrationVolumes(vmi, migVols); err != nil {
 			return err
 		}
 		// If the VMI has a VM controller, then update the VM spec consequentially
@@ -486,8 +572,8 @@ func (c *StorageMigrationController) executeStorageMigPerVMI(sm *virtstoragev1al
 				return fmt.Errorf("VM %s for the storage migration doesn't exist", vmiName)
 			}
 			vm := vmObj.(*virtv1.VirtualMachine)
-			if err := c.updateVMWithMigrationVolumes(vm, vmi); err != nil {
-				return err
+			if _, err1 = c.updateVMWithMigrationVolumes(vm, vmi); err != nil {
+				return err1
 			}
 
 		}

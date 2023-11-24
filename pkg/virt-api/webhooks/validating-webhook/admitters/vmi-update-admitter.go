@@ -32,8 +32,6 @@ import (
 
 	v1 "kubevirt.io/api/core/v1"
 
-	storagev1alpha1 "kubevirt.io/api/storage/v1alpha1"
-
 	webhookutils "kubevirt.io/kubevirt/pkg/util/webhooks"
 )
 
@@ -307,7 +305,7 @@ func getPermanentVolumes(volumes []v1.Volume, volumeStatuses []v1.VolumeStatus) 
 	return permanentVolumes
 }
 
-func getMigratedVolumeMaps(migratedDisks []storagev1alpha1.MigratedVolume) map[string]string {
+func getMigratedVolumeMaps(migratedDisks []v1.StorageMigratedVolumeInfo) map[string]string {
 	volumes := make(map[string]string)
 	for _, v := range migratedDisks {
 		volumes[v.SourcePvc] = v.DestinationPvc

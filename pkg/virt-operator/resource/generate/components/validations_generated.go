@@ -3632,6 +3632,14 @@ var CRDsValidation map[string]string = map[string]string{
       type: object
     status:
       properties:
+        completed:
+          type: integer
+        failed:
+          type: integer
+        notStarted:
+          type: integer
+        running:
+          type: integer
         storageMigrationStates:
           items:
             description: StorageMigrationState is the status for a StorageMigration
@@ -3639,6 +3647,11 @@ var CRDsValidation map[string]string = map[string]string{
             properties:
               completed:
                 type: boolean
+              endTimestamp:
+                description: The time the migration action ended
+                format: date-time
+                nullable: true
+                type: string
               failed:
                 type: boolean
               migratedVolume:
@@ -3657,12 +3670,23 @@ var CRDsValidation map[string]string = map[string]string{
                       type: string
                   type: object
                 type: array
-              virtualMachineMigrationName:
+              startTimestamp:
+                description: The time the migration action began
+                format: date-time
+                nullable: true
+                type: string
+              virtualMachineInstanceName:
                 description: VirtualMachineMigrationState state of the virtual machine
+                  migration triggered by the storage migration
+                type: string
+              virtualMachineMigrationName:
+                description: VirtualMachineMigrationName state of the virtual machine
                   migration triggered by the storage migration
                 type: string
             type: object
           type: array
+        total:
+          type: integer
       type: object
   required:
   - spec
@@ -12194,15 +12218,57 @@ var CRDsValidation map[string]string = map[string]string{
         migratedVolumes:
           items:
             properties:
+              destinationPVCInfo:
+                description: PersistentVolumeClaimInfo contains the relavant information
+                  virt-handler needs cached about a PVC
+                properties:
+                  accessModes:
+                    description: 'AccessModes contains the desired access modes the
+                      volume should have. More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#access-modes-1'
+                    items:
+                      type: string
+                    type: array
+                    x-kubernetes-list-type: atomic
+                  capacity:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: Capacity represents the capacity set on the corresponding
+                      PVC status
+                    type: object
+                  claimName:
+                    type: string
+                  filesystemOverhead:
+                    description: Percentage of filesystem's size to be reserved when
+                      resizing the PVC
+                    pattern: ^(0(?:\.\d{1,3})?|1)$
+                    type: string
+                  preallocated:
+                    description: Preallocated indicates if the PVC's storage is preallocated
+                      or not
+                    type: boolean
+                  requests:
+                    additionalProperties:
+                      anyOf:
+                      - type: integer
+                      - type: string
+                      pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
+                      x-kubernetes-int-or-string: true
+                    description: Requests represents the resources requested by the
+                      corresponding PVC spec
+                    type: object
+                  volumeMode:
+                    description: VolumeMode defines what type of volume is required
+                      by the claim. Value of Filesystem is implied when not included
+                      in claim spec.
+                    type: string
+                type: object
               destinationPvc:
                 type: string
-              reclaimPolicySourcePvc:
-                description: ReclaimPolicySourcePvc describes how the source volumes
-                  will be treated after a successful migration
-                type: string
               sourcePvc:
-                description: "\tVMIName        string 'json:\"vmiName,omitempty\"
-                  valid:\"required\"'"
                 type: string
             type: object
           type: array
