@@ -34,6 +34,7 @@ import (
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/precond"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+	"libvirt.org/go/libvirtxml"
 )
 
 // For versioning of the virt-handler and -launcher communication,
@@ -189,30 +190,30 @@ type DomainList struct {
 // tagged, and they must correspond to the libvirt domain as described in
 // https://libvirt.org/formatdomain.html.
 type DomainSpec struct {
-	XMLName        xml.Name        `xml:"domain"`
-	Type           string          `xml:"type,attr"`
-	XmlNS          string          `xml:"xmlns:qemu,attr,omitempty"`
-	Name           string          `xml:"name"`
-	UUID           string          `xml:"uuid,omitempty"`
-	Memory         Memory          `xml:"memory"`
-	CurrentMemory  *Memory         `xml:"currentMemory,omitempty"`
-	MaxMemory      *MaxMemory      `xml:"maxMemory,omitempty"`
-	MemoryBacking  *MemoryBacking  `xml:"memoryBacking,omitempty"`
-	OS             OS              `xml:"os"`
-	SysInfo        *SysInfo        `xml:"sysinfo,omitempty"`
-	Devices        Devices         `xml:"devices"`
-	Clock          *Clock          `xml:"clock,omitempty"`
-	Resource       *Resource       `xml:"resource,omitempty"`
-	QEMUCmd        *Commandline    `xml:"qemu:commandline,omitempty"`
-	Metadata       Metadata        `xml:"metadata,omitempty"`
-	Features       *Features       `xml:"features,omitempty"`
-	CPU            CPU             `xml:"cpu"`
-	VCPU           *VCPU           `xml:"vcpu"`
-	VCPUs          *VCPUs          `xml:"vcpus"`
-	CPUTune        *CPUTune        `xml:"cputune"`
-	NUMATune       *NUMATune       `xml:"numatune"`
-	IOThreads      *IOThreads      `xml:"iothreads,omitempty"`
-	LaunchSecurity *LaunchSecurity `xml:"launchSecurity,omitempty"`
+	XMLName        xml.Name               `xml:"domain"`
+	Type           string                 `xml:"type,attr"`
+	XmlNS          string                 `xml:"xmlns:qemu,attr,omitempty"`
+	Name           string                 `xml:"name"`
+	UUID           string                 `xml:"uuid,omitempty"`
+	Memory         Memory                 `xml:"memory"`
+	CurrentMemory  *Memory                `xml:"currentMemory,omitempty"`
+	MaxMemory      *MaxMemory             `xml:"maxMemory,omitempty"`
+	MemoryBacking  *MemoryBacking         `xml:"memoryBacking,omitempty"`
+	OS             OS                     `xml:"os"`
+	SysInfo        *SysInfo               `xml:"sysinfo,omitempty"`
+	Devices        Devices                `xml:"devices"`
+	Clock          *Clock                 `xml:"clock,omitempty"`
+	Resource       *Resource              `xml:"resource,omitempty"`
+	QEMUCmd        *Commandline           `xml:"qemu:commandline,omitempty"`
+	Metadata       Metadata               `xml:"metadata,omitempty"`
+	Features       *Features              `xml:"features,omitempty"`
+	CPU            libvirtxml.DomainCPU   `xml:"cpu"`
+	VCPU           *libvirtxml.DomainVCPU `xml:"vcpu"`
+	VCPUs          *VCPUs                 `xml:"vcpus"`
+	CPUTune        *CPUTune               `xml:"cputune"`
+	NUMATune       *NUMATune              `xml:"numatune"`
+	IOThreads      *IOThreads             `xml:"iothreads,omitempty"`
+	LaunchSecurity *LaunchSecurity        `xml:"launchSecurity,omitempty"`
 }
 
 type CPUTune struct {
@@ -251,11 +252,6 @@ type CPUEmulatorPin struct {
 	CPUSet string `xml:"cpuset,attr"`
 }
 
-type VCPU struct {
-	Placement string `xml:"placement,attr"`
-	CPUs      uint32 `xml:",chardata"`
-}
-
 type VCPUsVCPU struct {
 	ID           uint32 `xml:"id,attr"`
 	Enabled      string `xml:"enabled,attr,omitempty"`
@@ -267,35 +263,9 @@ type VCPUs struct {
 	VCPU []VCPUsVCPU `xml:"vcpu"`
 }
 
-type CPU struct {
-	Mode     string       `xml:"mode,attr,omitempty"`
-	Model    string       `xml:"model,omitempty"`
-	Features []CPUFeature `xml:"feature"`
-	Topology *CPUTopology `xml:"topology"`
-	NUMA     *NUMA        `xml:"numa,omitempty"`
-}
-
-type NUMA struct {
-	Cells []NUMACell `xml:"cell"`
-}
-
-type NUMACell struct {
-	ID           string `xml:"id,attr"`
-	CPUs         string `xml:"cpus,attr"`
-	Memory       uint64 `xml:"memory,attr,omitempty"`
-	Unit         string `xml:"unit,attr,omitempty"`
-	MemoryAccess string `xml:"memAccess,attr,omitempty"`
-}
-
 type CPUFeature struct {
 	Name   string `xml:"name,attr"`
 	Policy string `xml:"policy,attr,omitempty"`
-}
-
-type CPUTopology struct {
-	Sockets uint32 `xml:"sockets,attr,omitempty"`
-	Cores   uint32 `xml:"cores,attr,omitempty"`
-	Threads uint32 `xml:"threads,attr,omitempty"`
 }
 
 type Features struct {

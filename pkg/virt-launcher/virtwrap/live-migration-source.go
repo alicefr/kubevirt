@@ -137,7 +137,7 @@ func hotUnplugHostDevices(virConn cli.Connection, dom cli.VirDomain) error {
 	return nil
 }
 
-func generateDomainForTargetCPUSetAndTopology(vmi *v1.VirtualMachineInstance, domSpec *api.DomainSpec) (*api.Domain, error) {
+func configureDomainForTargetCPUSetAndTopology(vmi *v1.VirtualMachineInstance, domain *libvirtxml.Domain) error {
 	var targetTopology cmdv1.Topology
 	targetNodeCPUSet := vmi.Status.MigrationState.TargetCPUSet
 	err := json.Unmarshal([]byte(vmi.Status.MigrationState.TargetNodeTopology), &targetTopology)
@@ -152,8 +152,6 @@ func generateDomainForTargetCPUSetAndTopology(vmi *v1.VirtualMachineInstance, do
 			break
 		}
 	}
-	domain := api.NewMinimalDomain(vmi.Name)
-	domain.Spec = *domSpec
 	cpuTopology := vcpu.GetCPUTopology(vmi)
 	cpuCount := vcpu.CalculateRequestedVCPUs(cpuTopology)
 
@@ -163,8 +161,8 @@ func generateDomainForTargetCPUSetAndTopology(vmi *v1.VirtualMachineInstance, do
 		cpuTopology.Sockets = vmiCPU.MaxSockets
 		cpuCount = vcpu.CalculateRequestedVCPUs(cpuTopology)
 	}
-	domain.Spec.CPU.Topology = cpuTopology
-	domain.Spec.VCPU = &api.VCPU{
+	domain.CPU.Topology = cpuTopology
+	domain.VCPU = &api.VCPU{
 		Placement: "static",
 		CPUs:      cpuCount,
 	}
@@ -278,7 +276,10 @@ func migratableDomXML(dom cli.VirDomain, vmi *v1.VirtualMachineInstance, domSpec
 		log.Log.Object(vmi).Reason(err).Error("Live migration failed. Failed to get XML.")
 		return "", err
 	}
-
+	domcfg := &libvirtxml.Domain{}
+	if err := domcfg.Unmarshal(xmlstr); err != nil {
+		return "", err
+	}
 	if vmi.IsCPUDedicated() {
 		// If the VMI has dedicated CPUs, we need to replace the old CPUs that were
 		// assigned in the source node with the new CPUs assigned in the target node
@@ -286,7 +287,7 @@ func migratableDomXML(dom cli.VirDomain, vmi *v1.VirtualMachineInstance, domSpec
 		if err != nil {
 			return "", err
 		}
-		domain, err = generateDomainForTargetCPUSetAndTopology(vmi, domSpec)
+		err = configureDomainForTargetCPUSetAndTopology(vmi, domcfg)
 		if err != nil {
 			return "", err
 		}
