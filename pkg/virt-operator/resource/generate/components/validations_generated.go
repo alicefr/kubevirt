@@ -12230,6 +12230,8 @@ var CRDsValidation map[string]string = map[string]string{
                       in claim spec.
                     type: string
                 type: object
+              migrationPhase:
+                type: string
               sourcePVCInfo:
                 description: PersistentVolumeClaimInfo contains the relavant information
                   virt-handler needs cached about a PVC
@@ -27628,118 +27630,66 @@ var CRDsValidation map[string]string = map[string]string{
       description: VolumeMigrationSpec is the spec for a VolumeMigration resource
       properties:
         migratedVolume:
-          description: MigratedVolumes is a list of volumes to be migrated
           items:
             properties:
               destinationPvc:
                 type: string
-              reclaimPolicySourcePvc:
-                description: ReclaimPolicySourcePvc describes how the source volumes
-                  will be treated after a successful migration
-                type: string
               sourcePvc:
-                description: "\tVMIName        string 'json:\"vmiName,omitempty\"
-                  valid:\"required\"'"
                 type: string
+              sourcePvcReclaimPolicy:
+                description: "SourcePvcReclaimPolicy describes how the source PVC
+                  will be treated after the storage migration completes. The policies
+                  follows the same behavior as the RetainPolicy for PVs: \n \thttps://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaiming"
+                type: string
+            required:
+            - destinationPvc
+            - sourcePvc
             type: object
           type: array
       type: object
     status:
       properties:
-        completed:
-          type: integer
-        failed:
-          type: integer
-        notStarted:
-          type: integer
-        pending:
-          type: integer
-        pendingVolumes:
+        endTimestamp:
+          format: date-time
+          type: string
+        phase:
+          type: string
+        phaseTransitionTimestamps:
+          items:
+            properties:
+              phase:
+                type: string
+              phaseTransitionTimestamp:
+                format: date-time
+                type: string
+            type: object
+          type: array
+        startTimestamp:
+          format: date-time
+          type: string
+        virtualMachineInstanceName:
+          type: string
+        virtualMachineMigrationName:
+          type: string
+        volumeMigrationStates:
           items:
             properties:
               destinationPvc:
                 type: string
-              reclaimPolicySourcePvc:
-                description: ReclaimPolicySourcePvc describes how the source volumes
-                  will be treated after a successful migration
+              reason:
                 type: string
               sourcePvc:
                 type: string
-            type: object
-          type: array
-        rejected:
-          type: integer
-        rejectedVolumeMigrations:
-          items:
-            properties:
-              associatedVolumes:
-                description: AssociatedVolumes are the volumes valid to be migrated
-                  but that belongs to the same VMI as a rejected volume
-                items:
-                  type: string
-                type: array
-              rejectedVolumes:
-                items:
-                  properties:
-                    reason:
-                      type: string
-                    sourcePvc:
-                      type: string
-                  type: object
-                type: array
-              virtualMachineInstanceName:
-                description: VirtualMachineMigrationState name of the virtual machine
-                  triggered by the storage migration
+              sourcePvcReclaimPolicy:
+                description: "SourcePvcReclaimPolicy describes how the source PVC
+                  will be treated after the storage migration completes. The policies
+                  follows the same behavior as the RetainPolicy for PVs: \n \thttps://kubernetes.io/docs/concepts/storage/persistent-volumes/#reclaiming"
                 type: string
-            type: object
-          type: array
-        running:
-          type: integer
-        total:
-          type: integer
-        volumeMigrationStates:
-          items:
-            description: VolumeMigrationState is the status for a VolumeMigration
-              resource
-            properties:
-              completed:
-                type: boolean
-              endTimestamp:
-                description: The time the migration action ended
-                format: date-time
-                nullable: true
+              state:
                 type: string
-              failed:
-                type: boolean
-              migratedVolume:
-                description: MigratedVolumes is a list of volumes to be migrated
-                items:
-                  properties:
-                    destinationPvc:
-                      type: string
-                    reclaimPolicySourcePvc:
-                      description: ReclaimPolicySourcePvc describes how the source
-                        volumes will be treated after a successful migration
-                      type: string
-                    sourcePvc:
-                      description: "\tVMIName        string 'json:\"vmiName,omitempty\"
-                        valid:\"required\"'"
-                      type: string
-                  type: object
-                type: array
-              startTimestamp:
-                description: The time the migration action began
-                format: date-time
-                nullable: true
-                type: string
-              virtualMachineInstanceName:
-                description: VirtualMachineMigrationState name of the virtual machine
-                  triggered by the storage migration
-                type: string
-              virtualMachineMigrationName:
-                description: VirtualMachineMigrationName name of the virtual machine
-                  migration triggered by the storage migration
-                type: string
+            required:
+            - destinationPvc
+            - sourcePvc
             type: object
           type: array
       type: object
