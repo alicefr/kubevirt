@@ -647,12 +647,7 @@ func setTargetPodSELinuxLevel(pod *k8sv1.Pod, vmiSeContext string) error {
 	return nil
 }
 
-func (c *MigrationController) createTargetPod(migration *virtv1.VirtualMachineInstanceMigration, vmi *virtv1.VirtualMachineInstance, sourcePod *k8sv1.Pod) error {
-	templatePod, err := c.templateService.RenderMigrationManifest(vmi, sourcePod)
-	if err != nil {
-		return fmt.Errorf("failed to render launch manifest: %v", err)
-	}
-
+func setPodAntiAffinity(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod) {
 	antiAffinityTerm := k8sv1.PodAffinityTerm{
 		LabelSelector: &v1.LabelSelector{
 			MatchLabels: map[string]string{
@@ -665,14 +660,52 @@ func (c *MigrationController) createTargetPod(migration *virtv1.VirtualMachineIn
 		RequiredDuringSchedulingIgnoredDuringExecution: []k8sv1.PodAffinityTerm{antiAffinityTerm},
 	}
 
-	if templatePod.Spec.Affinity == nil {
-		templatePod.Spec.Affinity = &k8sv1.Affinity{
+	if pod.Spec.Affinity == nil {
+		pod.Spec.Affinity = &k8sv1.Affinity{
 			PodAntiAffinity: antiAffinityRule,
 		}
-	} else if templatePod.Spec.Affinity.PodAntiAffinity == nil {
-		templatePod.Spec.Affinity.PodAntiAffinity = antiAffinityRule
+	} else if pod.Spec.Affinity.PodAntiAffinity == nil {
+		pod.Spec.Affinity.PodAntiAffinity = antiAffinityRule
 	} else {
-		templatePod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(templatePod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, antiAffinityTerm)
+		pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution = append(pod.Spec.Affinity.PodAntiAffinity.RequiredDuringSchedulingIgnoredDuringExecution, antiAffinityTerm)
+	}
+}
+
+func setPodAffinity(vmi *virtv1.VirtualMachineInstance, pod *k8sv1.Pod) {
+	affinityTerm := k8sv1.PodAffinityTerm{
+		LabelSelector: &v1.LabelSelector{
+			MatchLabels: map[string]string{
+				virtv1.CreatedByLabel: string(vmi.UID),
+			},
+		},
+		TopologyKey: "kubernetes.io/hostname",
+	}
+	if pod.Spec.Affinity == nil {
+		pod.Spec.Affinity = &k8sv1.Affinity{}
+	}
+	if pod.Spec.Affinity.PodAffinity == nil {
+		pod.Spec.Affinity.PodAffinity = &k8sv1.PodAffinity{}
+	}
+
+	pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution = append(
+		pod.Spec.Affinity.PodAffinity.PreferredDuringSchedulingIgnoredDuringExecution,
+		k8sv1.WeightedPodAffinityTerm{
+			Weight:          1,
+			PodAffinityTerm: affinityTerm,
+		})
+}
+
+func (c *MigrationController) createTargetPod(migration *virtv1.VirtualMachineInstanceMigration, vmi *virtv1.VirtualMachineInstance, sourcePod *k8sv1.Pod) error {
+	templatePod, err := c.templateService.RenderMigrationManifest(vmi, sourcePod)
+	if err != nil {
+		return fmt.Errorf("failed to render launch manifest: %v", err)
+	}
+
+	if migration.Spec.MigrationSchedulingPerference != nil &&
+		*migration.Spec.MigrationSchedulingPerference == virtv1.MigrationSchedulingPerferenceLocal {
+		setPodAffinity(vmi, templatePod)
+	} else {
+		setPodAntiAffinity(vmi, templatePod)
 	}
 
 	templatePod.ObjectMeta.Labels[virtv1.MigrationJobLabel] = string(migration.UID)
