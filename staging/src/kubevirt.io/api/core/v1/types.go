@@ -1291,9 +1291,18 @@ type VirtualMachineInstanceMigrationList struct {
 	Items           []VirtualMachineInstanceMigration `json:"items"`
 }
 
+type MigrationSchedulingPerference string
+
+const (
+	MigrationSchedulingPerferenceDefault MigrationSchedulingPerference = "default"
+	MigrationSchedulingPerferenceLocal   MigrationSchedulingPerference = "local"
+)
+
 type VirtualMachineInstanceMigrationSpec struct {
 	// The name of the VMI to perform the migration on. VMI must exist in the migration objects namespace
 	VMIName string `json:"vmiName,omitempty" valid:"required"`
+
+	MigrationSchedulingPerference *MigrationSchedulingPerference `json:"migrationSchedulingPerference,omitempty"`
 }
 
 // VirtualMachineInstanceMigrationPhaseTransitionTimestamp gives a timestamp in relation to when a phase is set on a vmi

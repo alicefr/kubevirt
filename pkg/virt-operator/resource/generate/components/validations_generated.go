@@ -12548,6 +12548,8 @@ var CRDsValidation map[string]string = map[string]string{
       type: object
     spec:
       properties:
+        migrationSchedulingPerference:
+          type: string
         vmiName:
           description: The name of the VMI to perform the migration on. VMI must exist
             in the migration objects namespace
