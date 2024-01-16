@@ -58,7 +58,7 @@ type mounter struct {
 
 type Mounter interface {
 	ContainerDisksReady(vmi *v1.VirtualMachineInstance, notInitializedSince time.Time) (bool, error)
-	MountAndVerify(vmi *v1.VirtualMachineInstance) (map[string]*containerdisk.DiskInfo, error)
+	MountAndVerify(vmi *v1.VirtualMachineInstance, podUID types.UID) (map[string]*containerdisk.DiskInfo, error)
 	Unmount(vmi *v1.VirtualMachineInstance) error
 	ComputeChecksums(vmi *v1.VirtualMachineInstance) (*DiskChecksums, error)
 }
@@ -249,7 +249,7 @@ func (m *mounter) setAddMountTargetRecordHelper(vmi *v1.VirtualMachineInstance, 
 
 // Mount takes a vmi and mounts all container disks of the VMI, so that they are visible for the qemu process.
 // Additionally qcow2 images are validated if "verify" is true. The validation happens with rlimits set, to avoid DOS.
-func (m *mounter) MountAndVerify(vmi *v1.VirtualMachineInstance) (map[string]*containerdisk.DiskInfo, error) {
+func (m *mounter) MountAndVerify(vmi *v1.VirtualMachineInstance, podUID types.UID) (map[string]*containerdisk.DiskInfo, error) {
 	record := vmiMountTargetRecord{}
 	disksInfo := map[string]*containerdisk.DiskInfo{}
 
@@ -290,7 +290,7 @@ func (m *mounter) MountAndVerify(vmi *v1.VirtualMachineInstance) (map[string]*co
 		}
 	}
 
-	vmiRes, err := m.podIsolationDetector.Detect(vmi)
+	vmiRes, err := m.podIsolationDetector.DetectPod(podUID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to detect VMI pod: %v", err)
 	}

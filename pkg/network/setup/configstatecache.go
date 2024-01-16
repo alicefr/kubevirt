@@ -31,23 +31,24 @@ import (
 
 type ConfigStateCache struct {
 	vmiUID                string
+	pid                   int
 	cacheCreator          cacheCreator
 	volatilePodIfaceState map[string]cache.PodIfaceState
 }
 
-func NewConfigStateCache(vmiUID string, cacheCreator cacheCreator) ConfigStateCache {
-	return NewConfigStateCacheWithPodIfaceStateData(vmiUID, cacheCreator, map[string]cache.PodIfaceState{})
+func NewConfigStateCache(vmiUID string, pid int, cacheCreator cacheCreator) ConfigStateCache {
+	return NewConfigStateCacheWithPodIfaceStateData(vmiUID, pid, cacheCreator, map[string]cache.PodIfaceState{})
 }
 
-func NewConfigStateCacheWithPodIfaceStateData(vmiUID string, cacheCreator cacheCreator, volatilePodIfaceState map[string]cache.PodIfaceState) ConfigStateCache {
-	return ConfigStateCache{vmiUID, cacheCreator, volatilePodIfaceState}
+func NewConfigStateCacheWithPodIfaceStateData(vmiUID string, pid int, cacheCreator cacheCreator, volatilePodIfaceState map[string]cache.PodIfaceState) ConfigStateCache {
+	return ConfigStateCache{vmiUID, pid, cacheCreator, volatilePodIfaceState}
 }
 
 func (c *ConfigStateCache) Read(key string) (cache.PodIfaceState, error) {
 	if volatilePodIfaceState, ok := c.volatilePodIfaceState[key]; ok {
 		return volatilePodIfaceState, nil
 	}
-	podIfaceCacheData, err := cache.ReadPodInterfaceCache(c.cacheCreator, c.vmiUID, key)
+	podIfaceCacheData, err := cache.ReadPodInterfaceCache(c.cacheCreator, c.vmiUID, key, c.pid)
 	var state cache.PodIfaceState
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
@@ -62,7 +63,7 @@ func (c *ConfigStateCache) Read(key string) (cache.PodIfaceState, error) {
 }
 
 func (c *ConfigStateCache) Write(key string, state cache.PodIfaceState) error {
-	podIfaceCacheData, err := cache.ReadPodInterfaceCache(c.cacheCreator, c.vmiUID, key)
+	podIfaceCacheData, err := cache.ReadPodInterfaceCache(c.cacheCreator, c.vmiUID, key, c.pid)
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
 			log.Log.Reason(err).Errorf("failed to read pod interface network (%s) state from cache", key)
@@ -72,7 +73,7 @@ func (c *ConfigStateCache) Write(key string, state cache.PodIfaceState) error {
 	}
 
 	podIfaceCacheData.State = state
-	err = cache.WritePodInterfaceCache(c.cacheCreator, c.vmiUID, key, podIfaceCacheData)
+	err = cache.WritePodInterfaceCache(c.cacheCreator, c.vmiUID, key, c.pid, podIfaceCacheData)
 	if err != nil {
 		log.Log.Reason(err).Errorf("failed to write pod interface network (%s) state to cache", key)
 		return err
@@ -85,7 +86,7 @@ func (c *ConfigStateCache) Exists(key string) (bool, error) {
 	if _, exists := c.volatilePodIfaceState[key]; exists {
 		return true, nil
 	}
-	_, err := cache.ReadPodInterfaceCache(c.cacheCreator, c.vmiUID, key)
+	_, err := cache.ReadPodInterfaceCache(c.cacheCreator, c.vmiUID, key, c.pid)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return false, nil
@@ -97,7 +98,7 @@ func (c *ConfigStateCache) Exists(key string) (bool, error) {
 
 func (c *ConfigStateCache) Delete(key string) error {
 	delete(c.volatilePodIfaceState, key)
-	podIfaceCacheData, err := cache.ReadPodInterfaceCache(c.cacheCreator, c.vmiUID, key)
+	podIfaceCacheData, err := cache.ReadPodInterfaceCache(c.cacheCreator, c.vmiUID, key, c.pid)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil
@@ -105,7 +106,7 @@ func (c *ConfigStateCache) Delete(key string) error {
 		return err
 	}
 	podIfaceCacheData.State = cache.PodIfaceNetworkPreparationPending
-	err = cache.WritePodInterfaceCache(c.cacheCreator, c.vmiUID, key, podIfaceCacheData)
+	err = cache.WritePodInterfaceCache(c.cacheCreator, c.vmiUID, key, c.pid, podIfaceCacheData)
 	if err != nil {
 		return err
 	}

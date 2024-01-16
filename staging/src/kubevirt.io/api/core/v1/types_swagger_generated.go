@@ -54,6 +54,10 @@ func (TopologyHints) SwaggerDoc() map[string]string {
 	return map[string]string{}
 }
 
+func (ActivePod) SwaggerDoc() map[string]string {
+	return map[string]string{}
+}
+
 func (VirtualMachineInstanceStatus) SwaggerDoc() map[string]string {
 	return map[string]string{
 		"":                              "VirtualMachineInstanceStatus represents information about the status of a VirtualMachineInstance. Status may trail the actual\nstate of a system.",

@@ -59,7 +59,7 @@ func NewNetStateWithCustomFactory(cacheCreator cacheCreator) *NetStat {
 	}
 }
 
-func (c *NetStat) Teardown(vmi *v1.VirtualMachineInstance) {
+func (c *NetStat) Teardown(vmi *v1.VirtualMachineInstance, _pid int) {
 	c.podInterfaceVolatileCache.Range(func(key, value interface{}) bool {
 		if strings.HasPrefix(key.(string), string(vmi.UID)) {
 			c.podInterfaceVolatileCache.Delete(key)
@@ -85,7 +85,7 @@ func (c *NetStat) CachePodInterfaceVolatileData(vmi *v1.VirtualMachineInstance, 
 //     The virt-controller updates the VMI interfaces status my setting the infoSource field.
 //
 // Podnet nic has to be the first one in vmi.Status.Interfaces list to match vmi crd wide columns definition
-func (c *NetStat) UpdateStatus(vmi *v1.VirtualMachineInstance, domain *api.Domain) error {
+func (c *NetStat) UpdateStatus(vmi *v1.VirtualMachineInstance, domain *api.Domain, pid int) error {
 	if domain == nil {
 		return nil
 	}
@@ -104,7 +104,7 @@ func (c *NetStat) UpdateStatus(vmi *v1.VirtualMachineInstance, domain *api.Domai
 	)
 
 	var err error
-	interfacesStatus, err = c.updateIfacesStatusFromPodCache(interfacesStatus, vmi.Spec.Domain.Devices.Interfaces, vmi)
+	interfacesStatus, err = c.updateIfacesStatusFromPodCache(interfacesStatus, vmi.Spec.Domain.Devices.Interfaces, vmi, pid)
 	if err != nil {
 		return err
 	}
@@ -147,14 +147,14 @@ func ifacesStatusFromMultus(
 }
 
 // updateIfacesStatusFromPodCache updates the provided interfaces statuses with data (IP/s) from the pod-cache.
-func (c *NetStat) updateIfacesStatusFromPodCache(ifacesStatus []v1.VirtualMachineInstanceNetworkInterface, ifacesSpec []v1.Interface, vmi *v1.VirtualMachineInstance) ([]v1.VirtualMachineInstanceNetworkInterface, error) {
+func (c *NetStat) updateIfacesStatusFromPodCache(ifacesStatus []v1.VirtualMachineInstanceNetworkInterface, ifacesSpec []v1.Interface, vmi *v1.VirtualMachineInstance, pid int) ([]v1.VirtualMachineInstanceNetworkInterface, error) {
 	for _, iface := range ifacesSpec {
 		ifaceStatus := netvmispec.LookupInterfaceStatusByName(ifacesStatus, iface.Name)
 		if ifaceStatus == nil {
 			continue
 		}
 
-		podIface, err := c.getPodInterfacefromFileCache(vmi, iface.Name)
+		podIface, err := c.getPodInterfacefromFileCache(vmi, iface.Name, pid)
 		if err != nil {
 			return nil, err
 		}
@@ -165,7 +165,8 @@ func (c *NetStat) updateIfacesStatusFromPodCache(ifacesStatus []v1.VirtualMachin
 	return ifacesStatus, nil
 }
 
-func (c *NetStat) getPodInterfacefromFileCache(vmi *v1.VirtualMachineInstance, ifaceName string) (*cache.PodIfaceCacheData, error) {
+func (c *NetStat) getPodInterfacefromFileCache(vmi *v1.VirtualMachineInstance, ifaceName string,
+	pid int) (*cache.PodIfaceCacheData, error) {
 	// Once the Interface files are set on the handler, they don't change
 	// If already present in the map, don't read again
 	cacheData, exists := c.podInterfaceVolatileCache.Load(vmiInterfaceKey(vmi.UID, ifaceName))
@@ -174,7 +175,7 @@ func (c *NetStat) getPodInterfacefromFileCache(vmi *v1.VirtualMachineInstance, i
 	}
 
 	podInterface := &cache.PodIfaceCacheData{}
-	if data, err := cache.ReadPodInterfaceCache(c.cacheCreator, string(vmi.UID), ifaceName); err == nil {
+	if data, err := cache.ReadPodInterfaceCache(c.cacheCreator, string(vmi.UID), ifaceName, pid); err == nil {
 		//FIXME error handling?
 		podInterface = data
 	}

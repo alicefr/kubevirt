@@ -113,6 +113,37 @@ func (_mr *_MockManagerRecorder) GetCgroupThreads() *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "GetCgroupThreads")
 }
 
+// Mock of ManagerLaunchersCgroup interface
+type MockManagerLaunchersCgroup struct {
+	ctrl     *gomock.Controller
+	recorder *_MockManagerLaunchersCgroupRecorder
+}
+
+// Recorder for MockManagerLaunchersCgroup (not exported)
+type _MockManagerLaunchersCgroupRecorder struct {
+	mock *MockManagerLaunchersCgroup
+}
+
+func NewMockManagerLaunchersCgroup(ctrl *gomock.Controller) *MockManagerLaunchersCgroup {
+	mock := &MockManagerLaunchersCgroup{ctrl: ctrl}
+	mock.recorder = &_MockManagerLaunchersCgroupRecorder{mock}
+	return mock
+}
+
+func (_m *MockManagerLaunchersCgroup) EXPECT() *_MockManagerLaunchersCgroupRecorder {
+	return _m.recorder
+}
+
+func (_m *MockManagerLaunchersCgroup) GetManager(pid int) Manager {
+	ret := _m.ctrl.Call(_m, "GetManager", pid)
+	ret0, _ := ret[0].(Manager)
+	return ret0
+}
+
+func (_mr *_MockManagerLaunchersCgroupRecorder) GetManager(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "GetManager", arg0)
+}
+
 // Mock of runcManager interface
 type MockruncManager struct {
 	ctrl     *gomock.Controller

@@ -240,8 +240,9 @@ func (*VirtualMachineController) prepareVFIO(vmi *v1.VirtualMachineInstance, res
 	return nil
 }
 
-func (d *VirtualMachineController) nonRootSetup(origVMI, vmi *v1.VirtualMachineInstance) error {
-	res, err := d.podIsolationDetector.Detect(origVMI)
+func (d *VirtualMachineController) nonRootSetup(origVMI, vmi *v1.VirtualMachineInstance, primary bool) error {
+	fmt.Printf("XXX nonRootSetup primary: %v\n", primary)
+	res, err := d.detectIsolationPod(origVMI, primary)
 	if err != nil {
 		return err
 	}

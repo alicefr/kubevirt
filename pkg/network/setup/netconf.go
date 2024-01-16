@@ -49,7 +49,7 @@ type cacheCreator interface {
 type NetConf struct {
 	cacheCreator     cacheCreator
 	nsFactory        nsFactory
-	state            map[string]*netpod.State
+	state            map[string]map[int]*netpod.State
 	configStateMutex *sync.RWMutex
 }
 
@@ -63,10 +63,10 @@ func NewNetConf() *NetConf {
 	var cacheFactory cache.CacheCreator
 	return NewNetConfWithCustomFactoryAndConfigState(func(pid int) NSExecutor {
 		return netns.New(pid)
-	}, cacheFactory, map[string]*netpod.State{})
+	}, cacheFactory, map[string]map[int]*netpod.State{})
 }
 
-func NewNetConfWithCustomFactoryAndConfigState(nsFactory nsFactory, cacheCreator cacheCreator, state map[string]*netpod.State) *NetConf {
+func NewNetConfWithCustomFactoryAndConfigState(nsFactory nsFactory, cacheCreator cacheCreator, state map[string]map[int]*netpod.State) *NetConf {
 	return &NetConf{
 		state:            state,
 		configStateMutex: &sync.RWMutex{},
@@ -80,20 +80,30 @@ func (c *NetConf) Setup(vmi *v1.VirtualMachineInstance, networks []v1.Network, l
 	if err := preSetup(); err != nil {
 		return fmt.Errorf("setup failed at pre-setup stage, err: %w", err)
 	}
-
+	okPod := false
+	var state *netpod.State
 	c.configStateMutex.RLock()
-	state, ok := c.state[string(vmi.UID)]
+	entry, okVMI := c.state[string(vmi.UID)]
+	if okVMI {
+		state, okPod = entry[launcherPid]
+	} else {
+		entry = make(map[int]*netpod.State)
+	}
 	c.configStateMutex.RUnlock()
-	if !ok {
-		cache := NewConfigStateCache(string(vmi.UID), c.cacheCreator)
-		configStateCache, err := upgradeConfigStateCache(&cache, networks, c.cacheCreator, string(vmi.UID))
+
+	if !okPod {
+		cache := NewConfigStateCache(string(vmi.UID), launcherPid, c.cacheCreator)
+		configStateCache, err := upgradeConfigStateCache(&cache, networks, c.cacheCreator, string(vmi.UID), launcherPid)
 		if err != nil {
 			return err
 		}
 		ns := c.nsFactory(launcherPid)
 		state = netpod.NewState(configStateCache, ns)
+		entry[launcherPid] = state
 		c.configStateMutex.Lock()
-		c.state[string(vmi.UID)] = state
+		if !okVMI {
+			c.state[string(vmi.UID)] = entry
+		}
 		c.configStateMutex.Unlock()
 	}
 
@@ -110,7 +120,7 @@ func (c *NetConf) Setup(vmi *v1.VirtualMachineInstance, networks []v1.Network, l
 		ownerID,
 		queuesCapacity,
 		state,
-		netpod.WithMasqueradeAdapter(newMasqueradeAdapter(vmi)),
+		netpod.WithMasqueradeAdapter(newMasqueradeAdapter(vmi, launcherPid)),
 		netpod.WithCacheCreator(c.cacheCreator),
 	)
 
@@ -120,7 +130,7 @@ func (c *NetConf) Setup(vmi *v1.VirtualMachineInstance, networks []v1.Network, l
 	return nil
 }
 
-func upgradeConfigStateCache(stateCache *ConfigStateCache, networks []v1.Network, cacheCreator cacheCreator, vmiUID string) (*ConfigStateCache, error) {
+func upgradeConfigStateCache(stateCache *ConfigStateCache, networks []v1.Network, cacheCreator cacheCreator, vmiUID string, pid int) (*ConfigStateCache, error) {
 	for networkName, podIfaceName := range namescheme.CreateOrdinalNetworkNameScheme(networks) {
 		exists, err := stateCache.Exists(podIfaceName)
 		if err != nil {
@@ -137,7 +147,7 @@ func upgradeConfigStateCache(stateCache *ConfigStateCache, networks []v1.Network
 			if dErr := stateCache.Delete(podIfaceName); dErr != nil {
 				log.Log.Reason(dErr).Errorf("failed to delete pod interface (%s) state from cache", podIfaceName)
 			}
-			if dErr := cache.DeletePodInterfaceCache(cacheCreator, vmiUID, podIfaceName); dErr != nil {
+			if dErr := cache.DeletePodInterfaceCache(cacheCreator, vmiUID, podIfaceName, pid); dErr != nil {
 				log.Log.Reason(dErr).Errorf("failed to delete pod interface (%s) from cache", podIfaceName)
 			}
 		}
@@ -145,11 +155,11 @@ func upgradeConfigStateCache(stateCache *ConfigStateCache, networks []v1.Network
 	return stateCache, nil
 }
 
-func (c *NetConf) Teardown(vmi *v1.VirtualMachineInstance) error {
+func (c *NetConf) Teardown(vmi *v1.VirtualMachineInstance, pid int) error {
 	c.configStateMutex.Lock()
 	delete(c.state, string(vmi.UID))
 	c.configStateMutex.Unlock()
-	podCache := cache.NewPodInterfaceCache(c.cacheCreator, string(vmi.UID))
+	podCache := cache.NewPodInterfaceCache(c.cacheCreator, string(vmi.UID), pid)
 	if err := podCache.Remove(); err != nil {
 		return fmt.Errorf("teardown failed, err: %w", err)
 	}
@@ -157,7 +167,7 @@ func (c *NetConf) Teardown(vmi *v1.VirtualMachineInstance) error {
 	return nil
 }
 
-func newMasqueradeAdapter(vmi *v1.VirtualMachineInstance) masquerade.MasqPod {
+func newMasqueradeAdapter(vmi *v1.VirtualMachineInstance, pid int) masquerade.MasqPod {
 	if vmi.Status.MigrationTransport == v1.MigrationTransportUnix {
 		return masquerade.New(masquerade.WithIstio(istio.ProxyInjectionEnabled(vmi)))
 	} else {

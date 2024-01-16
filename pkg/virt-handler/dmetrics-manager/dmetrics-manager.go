@@ -113,7 +113,7 @@ func (m *DownwardMetricsManager) StartServer(vmi *v1.VirtualMachineInstance, pid
 
 	channelPath := downwardmetrics.ChannelSocketPathOnHost(pid)
 	ctx, cancelCtx := context.WithCancel(context.Background())
-	err = virtioserial.RunDownwardMetricsVirtioServer(ctx, m.nodeName, channelPath, launcherSocketPath)
+	err = virtioserial.RunDownwardMetricsVirtioServer(ctx, m.nodeName, channelPath, launcherSocketPath[0])
 	if err != nil {
 		cancelCtx()
 		return fmt.Errorf("failed to start the DownwardMetrics stopServer for VMI [%s], error: %v", vmi.GetName(), err)

@@ -310,6 +310,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"kubevirt.io/api/core/v1.ACPI":                                                               schema_kubevirtio_api_core_v1_ACPI(ref),
 		"kubevirt.io/api/core/v1.AccessCredential":                                                   schema_kubevirtio_api_core_v1_AccessCredential(ref),
 		"kubevirt.io/api/core/v1.AccessCredentialSecretSource":                                       schema_kubevirtio_api_core_v1_AccessCredentialSecretSource(ref),
+		"kubevirt.io/api/core/v1.ActivePod":                                                          schema_kubevirtio_api_core_v1_ActivePod(ref),
 		"kubevirt.io/api/core/v1.AddVolumeOptions":                                                   schema_kubevirtio_api_core_v1_AddVolumeOptions(ref),
 		"kubevirt.io/api/core/v1.ArchConfiguration":                                                  schema_kubevirtio_api_core_v1_ArchConfiguration(ref),
 		"kubevirt.io/api/core/v1.ArchSpecificConfiguration":                                          schema_kubevirtio_api_core_v1_ArchSpecificConfiguration(ref),
@@ -15596,6 +15597,33 @@ func schema_kubevirtio_api_core_v1_AccessCredentialSecretSource(ref common.Refer
 	}
 }
 
+func schema_kubevirtio_api_core_v1_ActivePod(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Type: []string{"object"},
+				Properties: map[string]spec.Schema{
+					"nodeName": {
+						SchemaProps: spec.SchemaProps{
+							Default: "",
+							Type:    []string{"string"},
+							Format:  "",
+						},
+					},
+					"primary": {
+						SchemaProps: spec.SchemaProps{
+							Default: false,
+							Type:    []string{"boolean"},
+							Format:  "",
+						},
+					},
+				},
+				Required: []string{"nodeName", "primary"},
+			},
+		},
+	}
+}
+
 func schema_kubevirtio_api_core_v1_AddVolumeOptions(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -23494,6 +23522,12 @@ func schema_kubevirtio_api_core_v1_VirtualMachineInstanceMigrationState(ref comm
 							Format:      "",
 						},
 					},
+					"targetPodUID": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
+						},
+					},
 					"targetAttachmentPodUID": {
 						SchemaProps: spec.SchemaProps{
 							Description: "The UID of the target attachment pod for hotplug volumes",
@@ -23588,6 +23622,12 @@ func schema_kubevirtio_api_core_v1_VirtualMachineInstanceMigrationState(ref comm
 							Description: "If the VMI requires dedicated CPUs, this field will hold the numa topology on the target node",
 							Type:        []string{"string"},
 							Format:      "",
+						},
+					},
+					"migrationSchedulingPerference": {
+						SchemaProps: spec.SchemaProps{
+							Type:   []string{"string"},
+							Format: "",
 						},
 					},
 				},
@@ -24480,9 +24520,8 @@ func schema_kubevirtio_api_core_v1_VirtualMachineInstanceStatus(ref common.Refer
 								Allows: true,
 								Schema: &spec.Schema{
 									SchemaProps: spec.SchemaProps{
-										Default: "",
-										Type:    []string{"string"},
-										Format:  "",
+										Default: map[string]interface{}{},
+										Ref:     ref("kubevirt.io/api/core/v1.ActivePod"),
 									},
 								},
 							},
@@ -24576,7 +24615,7 @@ func schema_kubevirtio_api_core_v1_VirtualMachineInstanceStatus(ref common.Refer
 			},
 		},
 		Dependencies: []string{
-			"kubevirt.io/api/core/v1.CPUTopology", "kubevirt.io/api/core/v1.KernelBootStatus", "kubevirt.io/api/core/v1.Machine", "kubevirt.io/api/core/v1.MemoryStatus", "kubevirt.io/api/core/v1.TopologyHints", "kubevirt.io/api/core/v1.VirtualMachineInstanceCondition", "kubevirt.io/api/core/v1.VirtualMachineInstanceGuestOSInfo", "kubevirt.io/api/core/v1.VirtualMachineInstanceMigrationState", "kubevirt.io/api/core/v1.VirtualMachineInstanceNetworkInterface", "kubevirt.io/api/core/v1.VirtualMachineInstancePhaseTransitionTimestamp", "kubevirt.io/api/core/v1.VolumeStatus"},
+			"kubevirt.io/api/core/v1.ActivePod", "kubevirt.io/api/core/v1.CPUTopology", "kubevirt.io/api/core/v1.KernelBootStatus", "kubevirt.io/api/core/v1.Machine", "kubevirt.io/api/core/v1.MemoryStatus", "kubevirt.io/api/core/v1.TopologyHints", "kubevirt.io/api/core/v1.VirtualMachineInstanceCondition", "kubevirt.io/api/core/v1.VirtualMachineInstanceGuestOSInfo", "kubevirt.io/api/core/v1.VirtualMachineInstanceMigrationState", "kubevirt.io/api/core/v1.VirtualMachineInstanceNetworkInterface", "kubevirt.io/api/core/v1.VirtualMachineInstancePhaseTransitionTimestamp", "kubevirt.io/api/core/v1.VolumeStatus"},
 	}
 }
 

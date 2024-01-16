@@ -201,6 +201,11 @@ type TopologyHints struct {
 	TSCFrequency *int64 `json:"tscFrequency,omitempty"`
 }
 
+type ActivePod struct {
+	NodeName string `json:"nodeName" valid:"required"`
+	Primary  bool   `json:"primary"`
+}
+
 // VirtualMachineInstanceStatus represents information about the status of a VirtualMachineInstance. Status may trail the actual
 // state of a system.
 type VirtualMachineInstanceStatus struct {
@@ -227,6 +232,7 @@ type VirtualMachineInstanceStatus struct {
 	MigrationMethod VirtualMachineInstanceMigrationMethod `json:"migrationMethod,omitempty"`
 	// This represents the migration transport
 	MigrationTransport VirtualMachineInstanceMigrationTransport `json:"migrationTransport,omitempty"`
+
 	// The Quality of Service (QOS) classification assigned to the virtual machine instance based on resource requirements
 	// See PodQOSClass type for available QOS classes
 	// More info: https://git.k8s.io/community/contributors/design-proposals/node/resource-qos.md
@@ -243,7 +249,7 @@ type VirtualMachineInstanceStatus struct {
 
 	// ActivePods is a mapping of pod UID to node name.
 	// It is possible for multiple pods to be running for a single VMI during migration.
-	ActivePods map[types.UID]string `json:"activePods,omitempty"`
+	ActivePods map[types.UID]ActivePod `json:"activePods,omitempty"`
 
 	// VolumeStatus contains the statuses of all the volumes
 	// +optional
@@ -506,6 +512,32 @@ func (v *VirtualMachineInstance) IsHighPerformanceVMI() bool {
 	return false
 }
 
+func (vmi *VirtualMachineInstance) GetPrimaryPod() *types.UID {
+	if vmi.Status.ActivePods == nil {
+		return nil
+	}
+	for k, v := range vmi.Status.ActivePods {
+		if v.Primary {
+			return &k
+		}
+	}
+
+	return nil
+}
+
+func (vmi *VirtualMachineInstance) GetSecondaryPod() *types.UID {
+	if vmi.Status.ActivePods == nil {
+		return nil
+	}
+	for k, v := range vmi.Status.ActivePods {
+		if !v.Primary {
+			return &k
+		}
+	}
+
+	return nil
+}
+
 type VirtualMachineInstanceConditionType string
 
 // These are valid conditions of VMIs.
@@ -694,7 +726,8 @@ type VirtualMachineInstanceMigrationState struct {
 	// The target node that the VMI is moving to
 	TargetNode string `json:"targetNode,omitempty"`
 	// The target pod that the VMI is moving to
-	TargetPod string `json:"targetPod,omitempty"`
+	TargetPod    string    `json:"targetPod,omitempty"`
+	TargetPodUID types.UID `json:"targetPodUID,omitempty"`
 	// The UID of the target attachment pod for hotplug volumes
 	TargetAttachmentPodUID types.UID `json:"targetAttachmentPodUID,omitempty"`
 	// The source node that the VMI originated on
@@ -721,7 +754,8 @@ type VirtualMachineInstanceMigrationState struct {
 	TargetCPUSet []int `json:"targetCPUSet,omitempty"`
 	// If the VMI requires dedicated CPUs, this field will
 	// hold the numa topology on the target node
-	TargetNodeTopology string `json:"targetNodeTopology,omitempty"`
+	TargetNodeTopology            string                        `json:"targetNodeTopology,omitempty"`
+	MigrationSchedulingPerference MigrationSchedulingPerference `json:"migrationSchedulingPerference,omitempty"`
 }
 
 type MigrationAbortStatus string

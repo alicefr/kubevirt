@@ -15945,6 +15945,23 @@
      }
     }
    },
+   "v1.ActivePod": {
+    "type": "object",
+    "required": [
+     "nodeName",
+     "primary"
+    ],
+    "properties": {
+     "nodeName": {
+      "type": "string",
+      "default": ""
+     },
+     "primary": {
+      "type": "boolean",
+      "default": false
+     }
+    }
+   },
    "v1.AddVolumeOptions": {
     "description": "AddVolumeOptions is provided when dynamically hot plugging a volume and disk",
     "type": "object",
@@ -20110,6 +20127,9 @@
       "description": "Name of the migration policy. If string is empty, no policy is matched",
       "type": "string"
      },
+     "migrationSchedulingPerference": {
+      "type": "string"
+     },
      "migrationUid": {
       "description": "The VirtualMachineInstanceMigration object associated with this migration",
       "type": "string"
@@ -20171,6 +20191,9 @@
      },
      "targetPod": {
       "description": "The target pod that the VMI is moving to",
+      "type": "string"
+     },
+     "targetPodUID": {
       "type": "string"
      }
     }
@@ -20627,8 +20650,8 @@
       "description": "ActivePods is a mapping of pod UID to node name. It is possible for multiple pods to be running for a single VMI during migration.",
       "type": "object",
       "additionalProperties": {
-       "type": "string",
-       "default": ""
+       "default": {},
+       "$ref": "#/definitions/v1.ActivePod"
       }
      },
      "conditions": {

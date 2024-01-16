@@ -44,10 +44,16 @@ type MigrationCreateAdmitter struct {
 	VirtClient    kubecli.KubevirtClient
 }
 
-func isMigratable(vmi *v1.VirtualMachineInstance) error {
+func isLocalMigration(spec *v1.VirtualMachineInstanceMigrationSpec) bool {
+	return spec.MigrationSchedulingPerference != nil &&
+		*spec.MigrationSchedulingPerference == v1.MigrationSchedulingPerferenceLocal
+}
+
+func isMigratable(vmi *v1.VirtualMachineInstance, spec *v1.VirtualMachineInstanceMigrationSpec) error {
 	for _, c := range vmi.Status.Conditions {
 		if c.Type == v1.VirtualMachineInstanceIsMigratable &&
-			c.Status == k8sv1.ConditionFalse {
+			c.Status == k8sv1.ConditionFalse &&
+			!isLocalMigration(spec) {
 			return fmt.Errorf("Cannot migrate VMI, Reason: %s, Message: %s", c.Reason, c.Message)
 		}
 	}
@@ -106,7 +112,7 @@ func (admitter *MigrationCreateAdmitter) Admit(ar *admissionv1.AdmissionReview) 
 	}
 
 	// Reject migration jobs for non-migratable VMIs
-	err = isMigratable(vmi)
+	err = isMigratable(vmi, &migration.Spec)
 	if err != nil {
 		return webhookutils.ToAdmissionResponseError(err)
 	}

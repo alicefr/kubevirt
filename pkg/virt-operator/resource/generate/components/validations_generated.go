@@ -11995,7 +11995,15 @@ var CRDsValidation map[string]string = map[string]string{
           type: integer
         activePods:
           additionalProperties:
-            type: string
+            properties:
+              nodeName:
+                type: string
+              primary:
+                type: boolean
+            required:
+            - nodeName
+            - primary
+            type: object
           description: ActivePods is a mapping of pod UID to node name. It is possible
             for multiple pods to be running for a single VMI during migration.
           type: object
@@ -12288,6 +12296,8 @@ var CRDsValidation map[string]string = map[string]string{
               description: Name of the migration policy. If string is empty, no policy
                 is matched
               type: string
+            migrationSchedulingPerference:
+              type: string
             migrationUid:
               description: The VirtualMachineInstanceMigration object associated with
                 this migration
@@ -12340,6 +12350,12 @@ var CRDsValidation map[string]string = map[string]string{
               type: string
             targetPod:
               description: The target pod that the VMI is moving to
+              type: string
+            targetPodUID:
+              description: UID is a type that holds unique ID values, including UUIDs.  Because
+                we don't ONLY use UUIDs, this is an alias to string.  Being a type
+                captures intent and helps make sure that UIDs and names do not get
+                conflated.
               type: string
           type: object
         migrationTransport:
@@ -12688,6 +12704,8 @@ var CRDsValidation map[string]string = map[string]string{
               description: Name of the migration policy. If string is empty, no policy
                 is matched
               type: string
+            migrationSchedulingPerference:
+              type: string
             migrationUid:
               description: The VirtualMachineInstanceMigration object associated with
                 this migration
@@ -12740,6 +12758,12 @@ var CRDsValidation map[string]string = map[string]string{
               type: string
             targetPod:
               description: The target pod that the VMI is moving to
+              type: string
+            targetPodUID:
+              description: UID is a type that holds unique ID values, including UUIDs.  Because
+                we don't ONLY use UUIDs, this is an alias to string.  Being a type
+                captures intent and helps make sure that UIDs and names do not get
+                conflated.
               type: string
           type: object
         phase:

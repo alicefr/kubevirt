@@ -71,6 +71,18 @@ type Manager interface {
 	GetCgroupThreads() ([]int, error)
 }
 
+type ManagerLaunchersCgroup interface {
+	GetManager(pid int) Manager
+}
+
+type managerVirtLaunchers struct {
+	managers map[int]Manager
+}
+
+func (m *managerVirtLaunchers) GetManager(pid int) Manager {
+	return m.managers[pid]
+}
+
 // This is here so that mockgen would create a mock out of it. That way we would have a mocked runc manager.
 type runcManager interface {
 	runc_cgroups.Manager
@@ -137,18 +149,31 @@ func newManagerFromPid(pid int, deviceRules []*devices.Rule) (manager Manager, e
 	return manager, err
 }
 
-func NewManagerFromVM(vmi *v1.VirtualMachineInstance) (Manager, error) {
+func NewManagerFromVM(vmi *v1.VirtualMachineInstance) (ManagerLaunchersCgroup, error) {
+	manager := &managerVirtLaunchers{
+		managers: make(map[int]Manager),
+	}
 	isolationRes, err := detectVMIsolation(vmi, "")
-	if err != nil {
-		return nil, err
+	for _, r := range isolationRes {
+		if err != nil {
+			return nil, err
+		}
+
+		vmiDeviceRules, err := generateDeviceRulesForVMI(vmi, r)
+		if err != nil {
+			return nil, err
+		}
+		m, err := newManagerFromPid(r.Pid(), vmiDeviceRules)
+		if err != nil {
+			return nil, err
+		}
+		manager.managers[r.Pid()] = m
+	}
+	if len(manager.managers) == 0 {
+		return nil, fmt.Errorf("no pids found for the VM")
 	}
 
-	vmiDeviceRules, err := generateDeviceRulesForVMI(vmi, isolationRes)
-	if err != nil {
-		return nil, err
-	}
-
-	return newManagerFromPid(isolationRes.Pid(), vmiDeviceRules)
+	return manager, nil
 }
 
 // GetGlobalCpuSetPath returns the CPU set of the main cgroup slice
@@ -176,19 +201,23 @@ func getCpuSetPath(manager Manager, cpusetFile string) (string, error) {
 
 // detectVMIsolation detects VM's IsolationResult, which can then be useful for receiving information such as PID.
 // Socket is optional and makes the execution faster
-func detectVMIsolation(vm *v1.VirtualMachineInstance, socket string) (isolationRes isolation.IsolationResult, err error) {
+func detectVMIsolation(vm *v1.VirtualMachineInstance, socket string) ([]isolation.IsolationResult, error) {
 	const detectionErrFormat = "cannot detect vm \"%s\", err: %v"
 	detector := isolation.NewSocketBasedIsolationDetector(virtutil.VirtShareDir)
 
+	var res []isolation.IsolationResult
+	var err error
 	if socket == "" {
-		isolationRes, err = detector.Detect(vm)
+		res, err = detector.Detect(vm)
 	} else {
+		var isolationRes isolation.IsolationResult
 		isolationRes, err = detector.DetectForSocket(vm, socket)
+		res = append(res, isolationRes)
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf(detectionErrFormat, vm.Name, err)
 	}
 
-	return isolationRes, nil
+	return res, nil
 }

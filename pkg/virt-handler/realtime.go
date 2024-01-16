@@ -37,7 +37,7 @@ var (
 // configureRealTimeVCPUs parses the realtime mask value and configured the selected vcpus
 // for real time workloads by setting the scheduler to FIFO and process priority equal to 1.
 func (d *VirtualMachineController) configureVCPUScheduler(vmi *v1.VirtualMachineInstance) error {
-	res, err := d.podIsolationDetector.Detect(vmi)
+	res, err := d.podIsolationDetector.DetectPrimaryPod(vmi)
 	if err != nil {
 		return err
 	}

@@ -907,8 +907,12 @@ func (c *MigrationController) handleTargetPodHandoff(migration *virtv1.VirtualMa
 		TargetNode:   pod.Spec.NodeName,
 		SourceNode:   vmi.Status.NodeName,
 		TargetPod:    pod.Name,
+		TargetPodUID: pod.UID,
 	}
 
+	if migration.Spec.MigrationSchedulingPerference != nil {
+		vmiCopy.Status.MigrationState.MigrationSchedulingPerference = *migration.Spec.MigrationSchedulingPerference
+	}
 	// By setting this label, virt-handler on the target node will receive
 	// the vmi and prepare the local environment for the migration
 	vmiCopy.ObjectMeta.Labels[virtv1.MigrationTargetNodeNameLabel] = pod.Spec.NodeName

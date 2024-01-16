@@ -21,6 +21,7 @@ package cache
 
 import (
 	"path/filepath"
+	"strconv"
 
 	v1 "kubevirt.io/api/core/v1"
 
@@ -46,33 +47,33 @@ type PodInterfaceCache struct {
 	cache *Cache
 }
 
-func ReadPodInterfaceCache(c cacheCreator, uid, ifaceName string) (*PodIfaceCacheData, error) {
-	podCache, err := NewPodInterfaceCache(c, uid).IfaceEntry(ifaceName)
+func ReadPodInterfaceCache(c cacheCreator, uid, ifaceName string, pid int) (*PodIfaceCacheData, error) {
+	podCache, err := NewPodInterfaceCache(c, uid, pid).IfaceEntry(ifaceName)
 	if err != nil {
 		return nil, err
 	}
 	return podCache.Read()
 }
 
-func WritePodInterfaceCache(c cacheCreator, uid, ifaceName string, cacheInterface *PodIfaceCacheData) error {
-	podCache, err := NewPodInterfaceCache(c, uid).IfaceEntry(ifaceName)
+func WritePodInterfaceCache(c cacheCreator, uid, ifaceName string, pid int, cacheInterface *PodIfaceCacheData) error {
+	podCache, err := NewPodInterfaceCache(c, uid, pid).IfaceEntry(ifaceName)
 	if err != nil {
 		return err
 	}
 	return podCache.Write(cacheInterface)
 }
 
-func DeletePodInterfaceCache(c cacheCreator, uid, ifaceName string) error {
-	podCache, err := NewPodInterfaceCache(c, uid).IfaceEntry(ifaceName)
+func DeletePodInterfaceCache(c cacheCreator, uid, ifaceName string, pid int) error {
+	podCache, err := NewPodInterfaceCache(c, uid, pid).IfaceEntry(ifaceName)
 	if err != nil {
 		return err
 	}
 	return podCache.Remove()
 }
 
-func NewPodInterfaceCache(creator cacheCreator, uid string) PodInterfaceCache {
+func NewPodInterfaceCache(creator cacheCreator, uid string, pid int) PodInterfaceCache {
 	const podIfaceCacheDirName = "network-info-cache"
-	return PodInterfaceCache{creator.New(filepath.Join(util.VirtPrivateDir, podIfaceCacheDirName, uid))}
+	return PodInterfaceCache{creator.New(filepath.Join(util.VirtPrivateDir, podIfaceCacheDirName, uid, strconv.Itoa(pid)))}
 }
 
 func (p PodInterfaceCache) IfaceEntry(ifaceName string) (PodInterfaceCache, error) {

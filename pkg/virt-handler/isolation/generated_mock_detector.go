@@ -5,6 +5,7 @@ package isolation
 
 import (
 	gomock "github.com/golang/mock/gomock"
+	types "k8s.io/apimachinery/pkg/types"
 	v1 "kubevirt.io/api/core/v1"
 )
 
@@ -29,9 +30,9 @@ func (_m *MockPodIsolationDetector) EXPECT() *_MockPodIsolationDetectorRecorder 
 	return _m.recorder
 }
 
-func (_m *MockPodIsolationDetector) Detect(vm *v1.VirtualMachineInstance) (IsolationResult, error) {
+func (_m *MockPodIsolationDetector) Detect(vm *v1.VirtualMachineInstance) ([]IsolationResult, error) {
 	ret := _m.ctrl.Call(_m, "Detect", vm)
-	ret0, _ := ret[0].(IsolationResult)
+	ret0, _ := ret[0].([]IsolationResult)
 	ret1, _ := ret[1].(error)
 	return ret0, ret1
 }
@@ -49,6 +50,39 @@ func (_m *MockPodIsolationDetector) DetectForSocket(vm *v1.VirtualMachineInstanc
 
 func (_mr *_MockPodIsolationDetectorRecorder) DetectForSocket(arg0, arg1 interface{}) *gomock.Call {
 	return _mr.mock.ctrl.RecordCall(_mr.mock, "DetectForSocket", arg0, arg1)
+}
+
+func (_m *MockPodIsolationDetector) DetectPod(uid types.UID) (IsolationResult, error) {
+	ret := _m.ctrl.Call(_m, "DetectPod", uid)
+	ret0, _ := ret[0].(IsolationResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockPodIsolationDetectorRecorder) DetectPod(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "DetectPod", arg0)
+}
+
+func (_m *MockPodIsolationDetector) DetectPrimaryPod(vm *v1.VirtualMachineInstance) (IsolationResult, error) {
+	ret := _m.ctrl.Call(_m, "DetectPrimaryPod", vm)
+	ret0, _ := ret[0].(IsolationResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockPodIsolationDetectorRecorder) DetectPrimaryPod(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "DetectPrimaryPod", arg0)
+}
+
+func (_m *MockPodIsolationDetector) DetectSecondaryPod(vm *v1.VirtualMachineInstance) (IsolationResult, error) {
+	ret := _m.ctrl.Call(_m, "DetectSecondaryPod", vm)
+	ret0, _ := ret[0].(IsolationResult)
+	ret1, _ := ret[1].(error)
+	return ret0, ret1
+}
+
+func (_mr *_MockPodIsolationDetectorRecorder) DetectSecondaryPod(arg0 interface{}) *gomock.Call {
+	return _mr.mock.ctrl.RecordCall(_mr.mock, "DetectSecondaryPod", arg0)
 }
 
 func (_m *MockPodIsolationDetector) Allowlist(controller []string) PodIsolationDetector {

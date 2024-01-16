@@ -27,6 +27,7 @@ go_library(
         "//vendor/github.com/moby/sys/mountinfo:go_default_library",
         "//vendor/golang.org/x/sys/unix:go_default_library",
         "//vendor/k8s.io/apimachinery/pkg/api/resource:go_default_library",
+        "//vendor/k8s.io/apimachinery/pkg/types:go_default_library",
     ],
 )
 

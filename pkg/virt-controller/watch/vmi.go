@@ -1704,20 +1704,32 @@ func (c *VMIController) listPodsFromNamespace(namespace string) ([]*k8sv1.Pod, e
 }
 
 func (c *VMIController) setActivePods(vmi *virtv1.VirtualMachineInstance) (*virtv1.VirtualMachineInstance, error) {
+	primarySet := false
 	pods, err := c.listPodsFromNamespace(vmi.Namespace)
 	if err != nil {
 		return nil, err
 	}
 
-	activePods := make(map[types.UID]string)
+	activePods := make(map[types.UID]virtv1.ActivePod)
 	count := 0
 	for _, pod := range pods {
+		var activePod virtv1.ActivePod
 		if !controller.IsControlledBy(pod, vmi) {
 			continue
 		}
 
+		activePod.NodeName = pod.Spec.NodeName
+		if vmi.Status.MigrationState != nil &&
+			vmi.Status.MigrationState.TargetPodUID == pod.UID {
+			activePod.Primary = false
+		} else if primarySet {
+			return nil, fmt.Errorf("multiple primary active pods exist")
+		} else {
+			activePod.Primary = true
+			primarySet = true
+		}
+		activePods[pod.UID] = activePod
 		count++
-		activePods[pod.UID] = pod.Spec.NodeName
 	}
 
 	if count == 0 && vmi.Status.ActivePods == nil {

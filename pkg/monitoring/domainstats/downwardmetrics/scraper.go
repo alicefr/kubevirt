@@ -52,11 +52,13 @@ func (s *Scraper) Scrape(socketFile string, vmi *k6sv1.VirtualMachineInstance) {
 		return
 	}
 
-	metricsUpdater := vhostmd.NewMetricsIODisk(downwardmetrics.FormatDownwardMetricPath(res.Pid()))
-	err = metricsUpdater.Write(metrics)
-	if err != nil {
-		log.Log.Reason(err).Infof("failed to write metrics to disk")
-		return
+	for _, r := range res {
+		metricsUpdater := vhostmd.NewMetricsIODisk(downwardmetrics.FormatDownwardMetricPath(r.Pid()))
+		err = metricsUpdater.Write(metrics)
+		if err != nil {
+			log.Log.Reason(err).Infof("failed to write metrics to disk")
+			return
+		}
 	}
 }
 

@@ -32,6 +32,7 @@ import (
 	ps "github.com/mitchellh/go-ps"
 	"golang.org/x/sys/unix"
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 
 	v1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/log"
@@ -46,9 +47,12 @@ import (
 type PodIsolationDetector interface {
 	// Detect takes a vm, looks up a socket based the VM and detects pid, cgroups and namespaces of the owner of that socket.
 	// It returns an IsolationResult containing all isolation information
-	Detect(vm *v1.VirtualMachineInstance) (IsolationResult, error)
+	Detect(vm *v1.VirtualMachineInstance) ([]IsolationResult, error)
 
 	DetectForSocket(vm *v1.VirtualMachineInstance, socket string) (IsolationResult, error)
+	DetectPod(uid types.UID) (IsolationResult, error)
+	DetectPrimaryPod(vm *v1.VirtualMachineInstance) (IsolationResult, error)
+	DetectSecondaryPod(vm *v1.VirtualMachineInstance) (IsolationResult, error)
 
 	// Allowlist allows specifying cgroup controller which should be considered to detect the cgroup slice
 	// It returns a PodIsolationDetector to allow configuring the PodIsolationDetector via the builder pattern.
@@ -74,32 +78,81 @@ func NewSocketBasedIsolationDetector(socketDir string) PodIsolationDetector {
 	}
 }
 
-func (s *socketBasedIsolationDetector) Detect(vm *v1.VirtualMachineInstance) (IsolationResult, error) {
-	// Look up the socket of the virt-launcher Pod which was created for that VM, and extract the PID from it
-	socket, err := cmdclient.FindSocketOnHost(vm)
+func (s *socketBasedIsolationDetector) DetectPod(uid types.UID) (IsolationResult, error) {
+	socket, err := cmdclient.FindSocketOnHostPod(uid)
 	if err != nil {
 		return nil, err
 	}
 
-	return s.DetectForSocket(vm, socket)
+	return s.detectForSocket(socket)
 }
 
-func (s *socketBasedIsolationDetector) DetectForSocket(vm *v1.VirtualMachineInstance, socket string) (IsolationResult, error) {
+func (s *socketBasedIsolationDetector) Detect(vm *v1.VirtualMachineInstance) ([]IsolationResult, error) {
+	// Look up the socket of the virt-launcher Pod which was created for that VM, and extract the PID from it
+	sockets, err := cmdclient.FindSocketOnHost(vm)
+	if err != nil {
+		return nil, err
+	}
+	var res []IsolationResult
+	for _, sock := range sockets {
+		r, err := s.DetectForSocket(vm, sock)
+		if err != nil {
+			return []IsolationResult{}, err
+		}
+		res = append(res, r)
+	}
+
+	return res, nil
+}
+
+func (s *socketBasedIsolationDetector) DetectPrimaryPod(vmi *v1.VirtualMachineInstance) (IsolationResult, error) {
+	fmt.Printf("XXX DetectPrimaryPod\n")
+	r, err := s.Detect(vmi)
+	if err != nil {
+		return nil, err
+	}
+	if len(r) < 1 {
+		return nil, fmt.Errorf("failed detecting primary pod isolation")
+	}
+	return r[0], nil
+}
+
+func (s *socketBasedIsolationDetector) DetectSecondaryPod(vmi *v1.VirtualMachineInstance) (IsolationResult, error) {
+	fmt.Printf("XXX DetectSecondaryyPod\n")
+	r, err := s.Detect(vmi)
+	if err != nil {
+		return nil, err
+	}
+	if len(r) < 2 {
+		return nil, fmt.Errorf("failed detecting secondary pod isolation")
+	}
+	return r[1], nil
+}
+
+func (s *socketBasedIsolationDetector) detectForSocket(socket string) (IsolationResult, error) {
 	var pid int
 	var ppid int
 	var err error
 
 	if pid, err = s.getPid(socket); err != nil {
-		log.Log.Object(vm).Reason(err).Errorf("Could not get owner Pid of socket %s", socket)
-		return nil, err
+		return nil, fmt.Errorf("Could not get owner Pid of socket %s: %v", socket, err)
 	}
 
 	if ppid, err = getPPid(pid); err != nil {
-		log.Log.Object(vm).Reason(err).Errorf("Could not get owner PPid of socket %s", socket)
-		return nil, err
+		return nil, fmt.Errorf("Could not get owner PPid of socket %s", socket)
 	}
 
 	return NewIsolationResult(pid, ppid), nil
+}
+
+func (s *socketBasedIsolationDetector) DetectForSocket(vm *v1.VirtualMachineInstance, socket string) (IsolationResult, error) {
+	res, err := s.detectForSocket(socket)
+	if err != nil {
+		log.Log.Object(vm).Reason(err).Errorf("failed detecting socket")
+		return nil, err
+	}
+
+	return res, nil
 }
 
 func (s *socketBasedIsolationDetector) Allowlist(controller []string) PodIsolationDetector {
@@ -118,7 +171,10 @@ func (s *socketBasedIsolationDetector) AdjustResources(vm *v1.VirtualMachineInst
 	if err != nil {
 		return err
 	}
-	launcherPid := res.Pid()
+	launcherPids := make(map[int]bool)
+	for _, r := range res {
+		launcherPids[r.Pid()] = true
+	}
 
 	processes, err := ps.Processes()
 	if err != nil {
@@ -127,7 +183,7 @@ func (s *socketBasedIsolationDetector) AdjustResources(vm *v1.VirtualMachineInst
 
 	for _, process := range processes {
 		// consider all processes that are virt-launcher children
-		if process.PPid() != launcherPid {
+		if _, ok := launcherPids[process.PPid()]; !ok {
 			continue
 		}
 
@@ -160,28 +216,29 @@ func AdjustQemuProcessMemoryLimits(podIsoDetector PodIsolationDetector, vmi *v1.
 		return nil
 	}
 
-	isolationResult, err := podIsoDetector.Detect(vmi)
+	isolationResults, err := podIsoDetector.Detect(vmi)
 	if err != nil {
 		return err
 	}
 
-	qemuProcess, err := isolationResult.GetQEMUProcess()
-	if err != nil {
-		return err
-	}
-	qemuProcessID := qemuProcess.Pid()
-	// make the best estimate for memory required by libvirt
-	memlockSize := services.GetMemoryOverhead(vmi, runtime.GOARCH, additionalOverheadRatio)
-	// Add base memory requested for the VM
-	vmiMemoryReq := vmi.Spec.Domain.Resources.Requests.Memory()
-	memlockSize.Add(*resource.NewScaledQuantity(vmiMemoryReq.ScaledValue(resource.Kilo), resource.Kilo))
+	for _, is := range isolationResults {
+		qemuProcess, err := is.GetQEMUProcess()
+		if err != nil {
+			return err
+		}
+		qemuProcessID := qemuProcess.Pid()
+		// make the best estimate for memory required by libvirt
+		memlockSize := services.GetMemoryOverhead(vmi, runtime.GOARCH, additionalOverheadRatio)
+		// Add base memory requested for the VM
+		vmiMemoryReq := vmi.Spec.Domain.Resources.Requests.Memory()
+		memlockSize.Add(*resource.NewScaledQuantity(vmiMemoryReq.ScaledValue(resource.Kilo), resource.Kilo))
 
-	if err := setProcessMemoryLockRLimit(qemuProcessID, memlockSize.Value()); err != nil {
-		return fmt.Errorf("failed to set process %d memlock rlimit to %d: %v", qemuProcessID, memlockSize.Value(), err)
+		if err := setProcessMemoryLockRLimit(qemuProcessID, memlockSize.Value()); err != nil {
+			return fmt.Errorf("failed to set process %d memlock rlimit to %d: %v", qemuProcessID, memlockSize.Value(), err)
+		}
+		log.Log.V(5).Object(vmi).Infof("set process %+v memlock rlimits to: Cur: %[2]d Max:%[2]d",
+			qemuProcess, memlockSize.Value())
 	}
-	log.Log.V(5).Object(vmi).Infof("set process %+v memlock rlimits to: Cur: %[2]d Max:%[2]d",
-		qemuProcess, memlockSize.Value())
-
 	return nil
 }
 

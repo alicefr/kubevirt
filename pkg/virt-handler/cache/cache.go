@@ -79,10 +79,10 @@ type DomainWatcher struct {
 }
 
 type ghostRecord struct {
-	Name       string    `json:"name"`
-	Namespace  string    `json:"namespace"`
-	SocketFile string    `json:"socketFile"`
-	UID        types.UID `json:"uid"`
+	Name        string          `json:"name"`
+	Namespace   string          `json:"namespace"`
+	SocketFiles map[string]bool `json:"socketFile"`
+	UID         types.UID       `json:"uid"`
 }
 
 var ghostRecordGlobalCache map[string]ghostRecord
@@ -169,7 +169,7 @@ func findGhostRecordBySocket(socketFile string) (ghostRecord, bool) {
 	defer ghostRecordGlobalMutex.Unlock()
 
 	for _, record := range ghostRecordGlobalCache {
-		if record.SocketFile == socketFile {
+		if _, ok := record.SocketFiles[socketFile]; ok {
 			return record, true
 		}
 	}
@@ -207,11 +207,12 @@ func AddGhostRecord(namespace string, name string, socketFile string, uid types.
 	if !ok {
 		// record doesn't exist, so add new one.
 		record := ghostRecord{
-			Name:       name,
-			Namespace:  namespace,
-			SocketFile: socketFile,
-			UID:        uid,
+			Name:        name,
+			Namespace:   namespace,
+			SocketFiles: make(map[string]bool),
+			UID:         uid,
 		}
+		record.SocketFiles[socketFile] = true
 
 		fileBytes, err := json.Marshal(&record)
 		if err != nil {
@@ -228,18 +229,19 @@ func AddGhostRecord(namespace string, name string, socketFile string, uid types.
 			return err
 		}
 		ghostRecordGlobalCache[key] = record
+
+		return nil
 	}
 
 	// This protects us from stomping on a previous ghost record
 	// that was not cleaned up properly. A ghost record that was
 	// not deleted indicates that the VMI shutdown process did not
 	// properly handle cleanup of local data.
-	if ok && record.UID != uid {
+	if record.UID != uid {
 		return fmt.Errorf("can not add ghost record when entry already exists with differing UID")
 	}
-
-	if ok && record.SocketFile != socketFile {
-		return fmt.Errorf("can not add ghost record when entry already exists with differing socket file location")
+	if _, okSockFile := record.SocketFiles[socketFile]; !okSockFile {
+		record.SocketFiles[socketFile] = true
 	}
 
 	return nil
@@ -285,15 +287,10 @@ func listSockets() ([]string, error) {
 	sockets = append(sockets, knownSocketFiles...)
 
 	for _, record := range ghostRecords {
-		exists := false
 		for _, socket := range knownSocketFiles {
-			if record.SocketFile == socket {
-				exists = true
-				break
+			if _, ok := record.SocketFiles[socket]; !ok {
+				sockets = append(sockets, socket)
 			}
-		}
-		if !exists {
-			sockets = append(sockets, record.SocketFile)
 		}
 	}
 

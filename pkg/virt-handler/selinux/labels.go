@@ -196,14 +196,20 @@ func GetVirtLauncherContext(vmi *v1.VirtualMachineInstance) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	virtLauncherRoot, err := isolationRes.MountRoot()
-	if err != nil {
-		return "", err
+	var previousContext, context []byte
+	for _, r := range isolationRes {
+		virtLauncherRoot, err := r.MountRoot()
+		if err != nil {
+			return "", err
+		}
+		context, err = safepath.GetxattrNoFollow(virtLauncherRoot, "security.selinux")
+		if err != nil {
+			return "", err
+		}
+		if len(previousContext) > 0 && string(previousContext) != string(context) {
+			return "", fmt.Errorf("get different contexts for virt-launcher pods")
+		}
+		previousContext = context
 	}
-	context, err := safepath.GetxattrNoFollow(virtLauncherRoot, "security.selinux")
-	if err != nil {
-		return "", err
-	}
-
 	return string(context), nil
 }

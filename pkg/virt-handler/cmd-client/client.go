@@ -43,6 +43,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"k8s.io/apimachinery/pkg/api/resource"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/json"
 
 	v1 "kubevirt.io/api/core/v1"
@@ -79,6 +80,18 @@ type MigrationOptions struct {
 	AllowAutoConverge        bool
 	AllowPostCopy            bool
 	ParallelMigrationThreads *uint
+}
+
+type ErrorSocketNotFound struct {
+	vmi string
+}
+
+func NewErrorSocketNotFound(vmi string) error {
+	return &ErrorSocketNotFound{vmi: vmi}
+}
+
+func (e *ErrorSocketNotFound) Error() string {
+	return fmt.Sprintf("No command socket found for vmi %s", e.vmi)
 }
 
 type LauncherClient interface {
@@ -241,6 +254,15 @@ func SocketFilePathOnHost(podUID string) string {
 	return fmt.Sprintf("%s/%s", SocketDirectoryOnHost(podUID), StandardLauncherSocketFileName)
 }
 
+func FindSocketOnHostPod(uid types.UID) (string, error) {
+	socket := SocketFilePathOnHost(string(uid))
+	exists, _ := diskutils.FileExists(socket)
+	if !exists {
+		return "", fmt.Errorf("No command socket found for pod %s", string(uid))
+	}
+	return socket, nil
+}
+
 // gets the cmd socket for a VMI
 func FindPodDirOnHost(vmi *v1.VirtualMachineInstance) (string, error) {
 
@@ -261,39 +283,46 @@ func FindPodDirOnHost(vmi *v1.VirtualMachineInstance) (string, error) {
 }
 
 // gets the cmd socket for a VMI
-func FindSocketOnHost(vmi *v1.VirtualMachineInstance) (string, error) {
+func FindSocketOnHost(vmi *v1.VirtualMachineInstance) ([]string, error) {
 	if string(vmi.UID) != "" {
 		legacySockFile := string(vmi.UID) + "_sock"
 		legacySock := filepath.Join(LegacySocketsDirectory(), legacySockFile)
 		exists, _ := diskutils.FileExists(legacySock)
 		if exists {
-			return legacySock, nil
+			return []string{legacySock}, nil
 		}
 	}
 
-	socketsFound := 0
-	foundSocket := ""
+	// First position is for the primary active pod
+	foundSockets := []string{""}
 	// It is possible for multiple pods to be active on a single VMI
 	// during migrations. This loop will discover the active pod on
 	// this particular local node if it exists. A active pod not
 	// running on this node will not have a kubelet pods directory,
 	// so it will not be found.
-	for podUID := range vmi.Status.ActivePods {
-		socket := SocketFilePathOnHost(string(podUID))
+	for uid, activePod := range vmi.Status.ActivePods {
+		socket := SocketFilePathOnHost(string(uid))
 		exists, _ := diskutils.FileExists(socket)
-		if exists {
-			foundSocket = socket
-			socketsFound++
+		if !exists {
+			continue
+		}
+		if activePod.Primary {
+			foundSockets[0] = socket
+			fmt.Printf("XXXX primary pod socket %s\n", socket)
+		} else {
+			foundSockets = append(foundSockets, socket)
+			fmt.Printf("XXXX secondary pod socket %s\n", socket)
 		}
 	}
 
-	if socketsFound == 1 {
-		return foundSocket, nil
-	} else if socketsFound > 1 {
-		return "", fmt.Errorf("Found multiple sockets for vmi %s/%s. waiting for only one to exist", vmi.Namespace, vmi.Name)
+	if len(foundSockets) > 2 {
+		return []string{}, fmt.Errorf("More then one secondary pod found for vmi: %s", vmi.UID)
 	}
 
-	return "", fmt.Errorf("No command socket found for vmi %s", vmi.UID)
+	if foundSockets[0] == "" {
+		return []string{}, NewErrorSocketNotFound(string(vmi.UID))
+	}
+	return foundSockets, nil
 }
 
 func SocketOnGuest() string {
