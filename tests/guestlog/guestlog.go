@@ -123,8 +123,8 @@ var _ = Describe("[sig-compute]Guest console log", decorators.SigCompute, func()
 			var cirrosLogo = `
   ____               ____  ____
  / __/ __ ____ ____ / __ \/ __/
-/ /__ / // __// __// /_/ /\ \ 
-\___//_//_/  /_/   \____/___/ 
+/ /__ / // __// __// /_/ /\ \
+\___//_//_/  /_/   \____/___/
    http://cirros-cloud.net
 `
 
