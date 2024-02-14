@@ -397,13 +397,8 @@ var _ = Describe("Apply", func() {
 				ops, err := generateServicePatch(cachedService, targetService)
 				Expect(err).ToNot(HaveOccurred())
 
-				hasSubstring := func(ops []string, substring string) bool {
-					for _, op := range ops {
-						if strings.Contains(op, substring) {
-							return true
-						}
-					}
-					return false
+				hasSubstring := func(ops []byte, substring string) bool {
+					return strings.Contains(string(ops), substring)
 				}
 
 				if expectLabelsAnnotationsPatch {
