@@ -294,6 +294,14 @@ type VirtualMachineInstanceStatus struct {
 	// Memory shows various informations about the VirtualMachine memory.
 	// +optional
 	Memory *MemoryStatus `json:"memory,omitempty"`
+
+	MigratedVolumes []StorageMigratedVolumeInfo `json:"migratedVolumes,omitempty"`
+}
+
+type StorageMigratedVolumeInfo struct {
+	VolumeName         string                     `json:"volumeName,omitempty" valid:"required"`
+	SourcePVCInfo      *PersistentVolumeClaimInfo `json:"sourcePVCInfo,omitempty" valid:"required"`
+	DestinationPVCInfo *PersistentVolumeClaimInfo `json:"destinationPVCInfo,omitempty" valid:"required"`
 }
 
 // PersistentVolumeClaimInfo contains the relavant information virt-handler needs cached about a PVC
@@ -1057,6 +1065,10 @@ const (
 
 	// EmulatorThreadCompleteToEvenParity alpha annotation will cause Kubevirt to complete the VMI's CPU count to an even parity when IsolateEmulatorThread options are requested
 	EmulatorThreadCompleteToEvenParity string = "alpha.kubevirt.io/EmulatorThreadCompleteToEvenParity"
+
+	// VolumesUpdateMigration indicates that the migration copies and update
+	// the volumes
+	VolumesUpdateMigration string = "kubevirt.io/volume-update-migration"
 )
 
 func NewVMI(name string, uid types.UID) *VirtualMachineInstance {
