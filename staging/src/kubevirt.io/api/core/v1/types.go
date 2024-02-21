@@ -76,6 +76,13 @@ const (
 	StartStrategyPaused StartStrategy = "Paused"
 )
 
+type UpdateVolumesStrategy string
+
+const (
+	UpdateVolumesStrategyMigration   UpdateVolumesStrategy = "Migration"
+	UpdateVolumesStrategyReplacement UpdateVolumesStrategy = "Replacement"
+)
+
 // VirtualMachineInstanceSpec is a description of a VirtualMachineInstance.
 type VirtualMachineInstanceSpec struct {
 
@@ -121,6 +128,7 @@ type VirtualMachineInstanceSpec struct {
 	//
 	// +optional
 	StartStrategy *StartStrategy `json:"startStrategy,omitempty"`
+
 	// Grace period observed after signalling a VirtualMachineInstance to stop after which the VirtualMachineInstance is force terminated.
 	TerminationGracePeriodSeconds *int64 `json:"terminationGracePeriodSeconds,omitempty"`
 	// List of volumes that can be mounted by disks belonging to the vmi.
@@ -294,6 +302,14 @@ type VirtualMachineInstanceStatus struct {
 	// Memory shows various informations about the VirtualMachine memory.
 	// +optional
 	Memory *MemoryStatus `json:"memory,omitempty"`
+
+	MigratedVolumes []StorageMigratedVolumeInfo `json:"migratedVolumes,omitempty"`
+}
+
+type StorageMigratedVolumeInfo struct {
+	VolumeName         string                     `json:"volumeName,omitempty" valid:"required"`
+	SourcePVCInfo      *PersistentVolumeClaimInfo `json:"sourcePVCInfo,omitempty" valid:"required"`
+	DestinationPVCInfo *PersistentVolumeClaimInfo `json:"destinationPVCInfo,omitempty" valid:"required"`
 }
 
 // PersistentVolumeClaimInfo contains the relavant information virt-handler needs cached about a PVC
@@ -567,6 +583,7 @@ const (
 
 	// Indicates if the change has been aborted while in progress
 	VirtualMachineInstanceChangeAbortion = "ChangeAbortion"
+	VirtualMachineInstanceVolumesChange  = "VolumesChange"
 
 	// Summarizes that all the DataVolumes attached to the VMI are Ready or not
 	VirtualMachineInstanceDataVolumesReady = "DataVolumesReady"
@@ -1057,6 +1074,10 @@ const (
 
 	// EmulatorThreadCompleteToEvenParity alpha annotation will cause Kubevirt to complete the VMI's CPU count to an even parity when IsolateEmulatorThread options are requested
 	EmulatorThreadCompleteToEvenParity string = "alpha.kubevirt.io/EmulatorThreadCompleteToEvenParity"
+
+	// VolumesUpdateMigration indicates that the migration copies and update
+	// the volumes
+	VolumesUpdateMigration string = "kubevirt.io/volume-update-migration"
 )
 
 func NewVMI(name string, uid types.UID) *VirtualMachineInstance {
@@ -1488,6 +1509,8 @@ type VirtualMachineSpec struct {
 	// Running state indicates the requested running state of the VirtualMachineInstance
 	// mutually exclusive with Running
 	RunStrategy *VirtualMachineRunStrategy `json:"runStrategy,omitempty" optional:"true"`
+
+	UpdateVolumesStrategy *UpdateVolumesStrategy `json:"updateVolumesStrategy,omitempty"`
 
 	// InstancetypeMatcher references a instancetype that is used to fill fields in Template
 	Instancetype *InstancetypeMatcher `json:"instancetype,omitempty" optional:"true"`
