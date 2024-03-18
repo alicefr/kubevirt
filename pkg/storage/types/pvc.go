@@ -92,6 +92,15 @@ func IsReadOnlyAccessMode(accessModes []k8sv1.PersistentVolumeAccessMode) bool {
 	return false
 }
 
+func IsReadWriteOnceAccessMode(accessModes []k8sv1.PersistentVolumeAccessMode) bool {
+	for _, accessMode := range accessModes {
+		if accessMode == k8sv1.ReadWriteOnce {
+			return true
+		}
+	}
+	return false
+}
+
 func IsPreallocated(annotations map[string]string) bool {
 	for a, value := range annotations {
 		if strings.Contains(a, "/storage.preallocation") && value == "true" {
