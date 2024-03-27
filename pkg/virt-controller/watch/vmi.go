@@ -2391,9 +2391,7 @@ func (c *VMIController) syncVolumesUpdate(vmi *virtv1.VirtualMachineInstance) {
 		Status:             k8sv1.ConditionTrue,
 		Message:            "migrate volumes",
 	}
-	if !vmiConditions.HasCondition(vmi, condition.Type) {
-		vmiConditions.UpdateCondition(vmi, &condition)
-	}
+	vmiConditions.UpdateCondition(vmi, &condition)
 }
 
 func (c *VMIController) aggregateDataVolumesConditions(vmiCopy *virtv1.VirtualMachineInstance, dvs []*cdiv1.DataVolume) {

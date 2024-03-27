@@ -15,6 +15,7 @@ import (
 	policy "k8s.io/api/policy/v1beta1"
 	"k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/tools/cache"
@@ -88,6 +89,7 @@ type updateData struct {
 	allOutdatedVMIs        []*virtv1.VirtualMachineInstance
 	migratableOutdatedVMIs []*virtv1.VirtualMachineInstance
 	evictOutdatedVMIs      []*virtv1.VirtualMachineInstance
+	abortChangeVMIs        []*virtv1.VirtualMachineInstance
 
 	numActiveMigrations int
 }
@@ -326,7 +328,11 @@ func isHotplugInProgress(vmi *virtv1.VirtualMachineInstance) bool {
 
 func isVolumesUpdateInProgress(vmi *virtv1.VirtualMachineInstance) bool {
 	condManager := controller.NewVirtualMachineInstanceConditionManager()
-	return condManager.HasCondition(vmi, virtv1.VirtualMachineInstanceVolumesChange)
+	c := condManager.GetCondition(vmi, virtv1.VirtualMachineInstanceVolumesChange)
+	if c != nil {
+		return c.Status == k8sv1.ConditionTrue
+	}
+	return false
 }
 
 func (c *WorkloadUpdateController) doesRequireMigration(vmi *virtv1.VirtualMachineInstance) bool {
@@ -373,6 +379,11 @@ func canVolumesUpdateMigration(vmi *virtv1.VirtualMachineInstance) bool {
 	return true
 }
 
+func isChangeAborted(vmi *virtv1.VirtualMachineInstance) bool {
+	vmiConditions := controller.NewVirtualMachineInstanceConditionManager()
+	return vmiConditions.HasCondition(vmi, virtv1.VirtualMachineInstanceChangeAbortion)
+}
+
 func (c *WorkloadUpdateController) getUpdateData(kv *virtv1.KubeVirt) *updateData {
 	data := &updateData{}
 
@@ -401,6 +412,9 @@ func (c *WorkloadUpdateController) getUpdateData(kv *virtv1.KubeVirt) *updateDat
 	objs := c.vmiInformer.GetStore().List()
 	for _, obj := range objs {
 		vmi := obj.(*virtv1.VirtualMachineInstance)
+		if isChangeAborted(vmi) {
+			data.abortChangeVMIs = append(data.abortChangeVMIs, vmi)
+		}
 		if !vmi.IsRunning() || vmi.IsFinal() || vmi.DeletionTimestamp != nil {
 			// only consider running VMIs that aren't being shutdown
 			continue
@@ -462,6 +476,7 @@ func (c *WorkloadUpdateController) execute(key string) error {
 func (c *WorkloadUpdateController) sync(kv *virtv1.KubeVirt) error {
 
 	data := c.getUpdateData(kv)
+	fmt.Printf("XXX data:%v\n", data)
 
 	key, err := controller.KeyFunc(kv)
 	if err != nil {
@@ -551,7 +566,7 @@ func (c *WorkloadUpdateController) sync(kv *virtv1.KubeVirt) error {
 		evictionCandidates = data.evictOutdatedVMIs[0:batchDeletionCount]
 	}
 
-	wgLen := len(migrationCandidates) + len(evictionCandidates)
+	wgLen := len(migrationCandidates) + len(evictionCandidates) + len(data.abortChangeVMIs)
 	wg := &sync.WaitGroup{}
 	wg.Add(wgLen)
 	errChan := make(chan error, wgLen)
@@ -559,11 +574,11 @@ func (c *WorkloadUpdateController) sync(kv *virtv1.KubeVirt) error {
 	c.migrationExpectations.ExpectCreations(key, migrateCount)
 	for _, vmi := range migrationCandidates {
 		go func(vmi *virtv1.VirtualMachineInstance) {
-			var labels map[string]string
+			labels := make(map[string]string)
 			if isVolumesUpdateInProgress(vmi) {
-				labels = make(map[string]string)
 				labels[virtv1.VolumesUpdateMigration] = vmi.Name
 			}
+			labels[virtv1.UpdateMigration] = vmi.Name
 			defer wg.Done()
 			createdMigration, err := c.clientset.VirtualMachineInstanceMigration(vmi.Namespace).Create(&virtv1.VirtualMachineInstanceMigration{
 				ObjectMeta: metav1.ObjectMeta{
@@ -619,6 +634,26 @@ func (c *WorkloadUpdateController) sync(kv *virtv1.KubeVirt) error {
 				log.Log.Object(vmi).Infof("Evicted vmi pod as part of workload update")
 				c.recorder.Eventf(vmi, k8sv1.EventTypeNormal, SuccessfulEvictVirtualMachineInstanceReason, "Initiated eviction of VMI as part of automated workload update: %v", err)
 			}
+		}(vmi)
+	}
+
+	for _, vmi := range data.abortChangeVMIs {
+		go func(vmi *virtv1.VirtualMachineInstance) {
+			ls := labels.Set{
+				virtv1.UpdateMigration: vmi.Name,
+			}
+			migList, err := c.clientset.VirtualMachineInstanceMigration(vmi.Namespace).List(
+				&metav1.ListOptions{
+					LabelSelector: ls.String(),
+				})
+			for _, mig := range migList.Items {
+				err = c.clientset.VirtualMachineInstanceMigration(vmi.Namespace).Delete(mig.Name, &metav1.DeleteOptions{})
+				if err != nil {
+					log.Log.Object(vmi).Reason(err).Errorf("Failed to delete migration as part of workload update")
+				}
+				errChan <- err
+			}
+
 		}(vmi)
 	}
 

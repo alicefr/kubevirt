@@ -182,7 +182,7 @@ var _ = SIGDescribe("Volumes update with migration", func() {
 			// wait VirtualMachineInstanceMigration to complete
 			waitForMigrationToSucceed(vmi.Name, ns)
 		},
-			Entry("single filesystem volume", fsPVC),
+			FEntry("single filesystem volume", fsPVC),
 			Entry("single block volume", blockPVC),
 		)
 	})

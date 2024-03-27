@@ -40,6 +40,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authv1 "k8s.io/api/authorization/v1"
 	k8score "k8s.io/api/core/v1"
+	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -114,6 +115,7 @@ const (
 	HotPlugNetworkInterfaceErrorReason = "HotPlugNetworkInterfaceError"
 	AffinityChangeErrorReason          = "AffinityChangeError"
 	HotPlugMemoryErrorReason           = "HotPlugMemoryError"
+	VolumesUpdateErrorReason           = "VolumesUpdateMemoryError"
 )
 
 const defaultMaxCrashLoopBackoffDelaySeconds = 300
@@ -848,17 +850,31 @@ func (vols *invalidVols) errorMessage() string {
 	return s.String()
 }
 
-func updatedVolumesMapping(oldSpec *virtv1.VirtualMachineSpec, vmi *virtv1.VirtualMachineInstance) map[string]bool {
-	updateVols := make(map[string]bool)
+func updatedVolumesMapping(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) map[string]string {
+	updateVols := make(map[string]string)
+	vmVols := make(map[string]string)
+	// New volumes
+	for _, v := range vm.Spec.Template.Spec.Volumes {
+		if name := storagetypes.PVCNameFromVirtVolume(&v); name != "" {
+			vmVols[v.Name] = name
+		}
+	}
+	// Old volumes
+	for _, v := range vmi.Spec.Volumes {
+		name := storagetypes.PVCNameFromVirtVolume(&v)
+		claim, ok := vmVols[v.Name]
+		if ok && name != claim {
+			updateVols[v.Name] = claim
+		}
+	}
 	return updateVols
 }
 
-func validateVolumes(oldSpec *virtv1.VirtualMachineSpec, vmi *virtv1.VirtualMachineInstance) (bool, string) {
+func validateVolumes(updateVols map[string]string, vmi *virtv1.VirtualMachineInstance) (bool, string) {
 	var invalidVols invalidVols
 	valid := true
 	disks := storagetypes.GetDisksFromVolumes(vmi)
 	filesystems := storagetypes.GetFilesystemsFromVolumes(vmi)
-	updateVols := updatedVolumesMapping(oldSpec, vmi)
 	for _, v := range vmi.Spec.Volumes {
 		name := storagetypes.PVCNameFromVirtVolume(&v)
 		_, ok := updateVols[name]
@@ -905,25 +921,98 @@ func validateVolumes(oldSpec *virtv1.VirtualMachineSpec, vmi *virtv1.VirtualMach
 	return true, ""
 }
 
+func changeMigratedVolumes(updatedVols map[string]string, vmi *virtv1.VirtualMachineInstance) bool {
+	for _, migVol := range vmi.Status.MigratedVolumes {
+		if _, ok := updatedVols[migVol.VolumeName]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+func revertedToOldVolumes(updatedVols map[string]string, vmi *virtv1.VirtualMachineInstance) bool {
+	for _, migVol := range vmi.Status.MigratedVolumes {
+		if migVol.SourcePVCInfo == nil {
+			continue
+		}
+		fmt.Printf("XXX mig vol source %s\n", migVol.SourcePVCInfo.ClaimName)
+		claim, ok := updatedVols[migVol.VolumeName]
+		if !ok || migVol.SourcePVCInfo.ClaimName != claim {
+			return false
+		}
+	}
+	return true
+}
+
+func (c *VMController) abortVolumeMigration(vmi *virtv1.VirtualMachineInstance) error {
+	log.Log.V(2).Object(vmi).Infof("Abort volume migration")
+	vmiConditions := controller.NewVirtualMachineInstanceConditionManager()
+	vmiCopy := vmi.DeepCopy()
+	vmiConditions.UpdateCondition(vmiCopy, &virtv1.VirtualMachineInstanceCondition{
+		Type:               virtv1.VirtualMachineInstanceVolumesChange,
+		LastTransitionTime: v1.Now(),
+		Status:             k8score.ConditionFalse,
+	})
+	vmiConditions.UpdateCondition(vmiCopy, &virtv1.VirtualMachineInstanceCondition{
+		Type:               virtv1.VirtualMachineInstanceChangeAbortion,
+		LastTransitionTime: v1.Now(),
+		Status:             k8score.ConditionTrue,
+		Message:            "volume migration aborted because migrated volumes have changed",
+	})
+	vmiCopy.Status.MigratedVolumes = []virtv1.StorageMigratedVolumeInfo{}
+	patches := patch.New()
+	patches.TestAndReplace("/status/conditions", vmi.Status.Conditions, vmiCopy.Status.Conditions)
+	patches.TestAndReplace("/status/migratedVolumes", vmi.Status.MigratedVolumes, vmiCopy.Status.MigratedVolumes)
+	p, err := patches.GeneratePayload()
+	if err != nil {
+		return err
+	}
+	_, err = c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.JSONPatchType, p, &v1.PatchOptions{})
+	if err != nil {
+		return fmt.Errorf("failed updating vmi condition: %v", err)
+	}
+	return nil
+}
+
+// TODO create common function copy from pkg/virt-controller/watch/workload-updater/workload-updater.go
+func (c *VMController) isVolumeMigrating(vmi *virtv1.VirtualMachineInstance) bool {
+	condManager := controller.NewVirtualMachineInstanceConditionManager()
+	cond := condManager.GetCondition(vmi, virtv1.VirtualMachineInstanceVolumesChange)
+	if cond != nil {
+		return cond.Status == k8sv1.ConditionTrue
+	}
+	return false
+}
+
 func (c *VMController) handleVolumeUpdateRequest(oldSpec *virtv1.VirtualMachineSpec, vm *virtv1.VirtualMachine,
 	vmi *virtv1.VirtualMachineInstance) error {
 	if vmi == nil {
 		return nil
 	}
-	vmConditionManager := controller.NewVirtualMachineConditionManager()
-	if migrations.IsMigrating(vmi) {
-		return fmt.Errorf("volumes update is not allowed while VMI is migrating")
-	}
-
 	if equality.Semantic.DeepEqual(vmi.Spec.Volumes, vm.Spec.Template.Spec.Volumes) {
 		return nil
 	}
 
 	vmConditions := controller.NewVirtualMachineConditionManager()
+	updateVols := updatedVolumesMapping(vm, vmi)
+	// Abort the volume migration if any of the previous migrated volumes
+	// has changed
+	if c.isVolumeMigrating(vmi) && changeMigratedVolumes(updateVols, vmi) {
+		if revertedToOldVolumes(updateVols, vmi) {
+			vmiCopy, err := c.patchVMIVolumes(vmi, vm)
+			if err != nil {
+				return err
+			}
+			return c.abortVolumeMigration(vmiCopy)
+		} else {
+			return fmt.Errorf("The volumes can be only reverted to the previous ones during the update")
+		}
+	}
+
 	switch {
 	case vm.Spec.UpdateVolumesStrategy == nil ||
 		*vm.Spec.UpdateVolumesStrategy == virtv1.UpdateVolumesStrategyReplacement:
-		if !vmConditionManager.HasCondition(vm, virtv1.VirtualMachineRestartRequired) {
+		if !vmConditions.HasCondition(vm, virtv1.VirtualMachineRestartRequired) {
 			vmConditions.UpdateCondition(vm, &virtv1.VirtualMachineCondition{
 				Type:               virtv1.VirtualMachineRestartRequired,
 				LastTransitionTime: v1.Now(),
@@ -933,7 +1022,7 @@ func (c *VMController) handleVolumeUpdateRequest(oldSpec *virtv1.VirtualMachineS
 		}
 	case *vm.Spec.UpdateVolumesStrategy == virtv1.UpdateVolumesStrategyMigration:
 		// Validate if the update volumes can be migrated
-		if valid, msg := validateVolumes(oldSpec, vmi); !valid {
+		if valid, msg := validateVolumes(updateVols, vmi); !valid {
 			vmConditions.UpdateCondition(vm, &virtv1.VirtualMachineCondition{
 				Type:               virtv1.VirtualMachineInstanceVolumesChange,
 				LastTransitionTime: v1.Now(),
@@ -945,7 +1034,7 @@ func (c *VMController) handleVolumeUpdateRequest(oldSpec *virtv1.VirtualMachineS
 		if err := c.patchVMIStatusWithMigratedVolumes(vmi, vm); err != nil {
 			return err
 		}
-		if err := c.patchVMIVolumes(vmi, vm); err != nil {
+		if _, err := c.patchVMIVolumes(vmi, vm); err != nil {
 			return err
 		}
 	default:
@@ -980,15 +1069,23 @@ func (c *VMController) patchVMIStatusWithMigratedVolumes(vmi *virtv1.VirtualMach
 		if err != nil {
 			return err
 		}
+		var oldVolMode *k8sv1.PersistentVolumeMode
+		var volMode *k8sv1.PersistentVolumeMode
+		if oldPvc != nil && oldPvc.Spec.VolumeMode != nil {
+			oldVolMode = oldPvc.Spec.VolumeMode
+		}
+		if pvc != nil && pvc.Spec.VolumeMode != nil {
+			volMode = pvc.Spec.VolumeMode
+		}
 		migVolsInfo = append(migVolsInfo, virtv1.StorageMigratedVolumeInfo{
 			VolumeName: v.Name,
 			DestinationPVCInfo: &virtv1.PersistentVolumeClaimInfo{
 				ClaimName:  claim,
-				VolumeMode: pvc.Spec.VolumeMode,
+				VolumeMode: volMode,
 			},
 			SourcePVCInfo: &virtv1.PersistentVolumeClaimInfo{
 				ClaimName:  oldClaim,
-				VolumeMode: oldPvc.Spec.VolumeMode,
+				VolumeMode: oldVolMode,
 			},
 		})
 	}
@@ -1008,15 +1105,15 @@ func (c *VMController) patchVMIStatusWithMigratedVolumes(vmi *virtv1.VirtualMach
 	vmi, err = c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.JSONPatchType, patch, &v1.PatchOptions{})
 	return err
 }
-func (c *VMController) patchVMIVolumes(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) error {
+func (c *VMController) patchVMIVolumes(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachine) (*virtv1.VirtualMachineInstance, error) {
+	log.Log.V(2).Object(vmi).Infof("Patch VMI volumes")
 	patches := patch.New()
 	patches.TestAndReplace("/spec/volumes", vmi.Spec.Volumes, vm.Spec.Template.Spec.Volumes)
 	patch, err := patches.GeneratePayload()
 	if err != nil {
-		return err
+		return nil, err
 	}
-	vmi, err = c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.JSONPatchType, patch, &v1.PatchOptions{})
-	return err
+	return c.clientset.VirtualMachineInstance(vmi.Namespace).Patch(context.Background(), vmi.Name, types.JSONPatchType, patch, &v1.PatchOptions{})
 }
 
 func (c *VMController) handleVolumeRequests(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) error {
@@ -3264,7 +3361,7 @@ func (c *VMController) sync(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachin
 			if err := c.handleVolumeUpdateRequest(startVMSpec, vmCopy, vmi); err != nil {
 				syncErr = &syncErrorImpl{
 					err:    fmt.Errorf("error encountered while handling volumes update requests: %v", err),
-					reason: HotPlugMemoryErrorReason,
+					reason: VolumesUpdateErrorReason,
 				}
 			}
 

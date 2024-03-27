@@ -32,7 +32,6 @@ import (
 
 	v1 "kubevirt.io/api/core/v1"
 
-	storagetypes "kubevirt.io/kubevirt/pkg/storage/types"
 	webhookutils "kubevirt.io/kubevirt/pkg/util/webhooks"
 )
 
@@ -210,16 +209,15 @@ func verifyHotplugVolumes(newHotplugVolumeMap, oldHotplugVolumeMap map[string]v1
 	return nil
 }
 
-func isMigrateDisk(newVol, oldVol *v1.Volume, migratedVolumeMap map[string]string) bool {
-	oldVolName := storagetypes.PVCNameFromVirtVolume(oldVol)
-	newVolName := storagetypes.PVCNameFromVirtVolume(newVol)
-	if v, ok := migratedVolumeMap[oldVolName]; ok && v == newVolName {
-		return true
+func isMigrateDisk(newVol, oldVol *v1.Volume, migratedVolumeMap map[string]bool) bool {
+	if newVol.Name != oldVol.Name {
+		return false
 	}
-	return false
+	_, ok := migratedVolumeMap[newVol.Name]
+	return ok
 }
 
-func verifyPermanentVolumes(newPermanentVolumeMap, oldPermanentVolumeMap map[string]v1.Volume, newDisks, oldDisks map[string]v1.Disk, migratedVolumeMap map[string]string) *admissionv1.AdmissionResponse {
+func verifyPermanentVolumes(newPermanentVolumeMap, oldPermanentVolumeMap map[string]v1.Volume, newDisks, oldDisks map[string]v1.Disk, migratedVolumeMap map[string]bool) *admissionv1.AdmissionResponse {
 	if len(newPermanentVolumeMap) != len(oldPermanentVolumeMap) {
 		// Removed one of the permanent volumes, reject admission.
 		return webhookutils.ToAdmissionResponse([]metav1.StatusCause{
@@ -305,10 +303,10 @@ func getPermanentVolumes(volumes []v1.Volume, volumeStatuses []v1.VolumeStatus) 
 	return permanentVolumes
 }
 
-func getMigratedVolumeMaps(migratedDisks []v1.StorageMigratedVolumeInfo) map[string]string {
-	volumes := make(map[string]string)
+func getMigratedVolumeMaps(migratedDisks []v1.StorageMigratedVolumeInfo) map[string]bool {
+	volumes := make(map[string]bool)
 	for _, v := range migratedDisks {
-		volumes[v.SourcePVCInfo.ClaimName] = v.DestinationPVCInfo.ClaimName
+		volumes[v.VolumeName] = true
 	}
 	return volumes
 }

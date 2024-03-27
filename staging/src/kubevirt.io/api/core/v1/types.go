@@ -579,7 +579,8 @@ const (
 	// Indicates that the VMI is hot(un)plugging memory
 	VirtualMachineInstanceMemoryChange = "HotMemoryChange"
 
-	VirtualMachineInstanceVolumesChange = "VolumesChange"
+	VirtualMachineInstanceVolumesChange  = "VolumesChange"
+	VirtualMachineInstanceChangeAbortion = "ChangeAbortion"
 
 	// Summarizes that all the DataVolumes attached to the VMI are Ready or not
 	VirtualMachineInstanceDataVolumesReady = "DataVolumesReady"
@@ -1074,6 +1075,9 @@ const (
 	// VolumesUpdateMigration indicates that the migration copies and update
 	// the volumes
 	VolumesUpdateMigration string = "kubevirt.io/volume-update-migration"
+	// VolumesUpdateMigration indicates that the migration copies and update
+	// the volumes
+	UpdateMigration string = "kubevirt.io/workload-update-migration"
 )
 
 func NewVMI(name string, uid types.UID) *VirtualMachineInstance {

@@ -481,6 +481,10 @@ func (c *MigrationController) updateStatus(migration *virtv1.VirtualMachineInsta
 			LastProbeTime: v1.Now(),
 		}
 		migrationCopy.Status.Conditions = append(migrationCopy.Status.Conditions, condition)
+	} else if migration.DeletionTimestamp == nil && conditionManager.HasCondition(migration, virtv1.VirtualMachineInstanceMigrationAbortRequested) {
+		fmt.Printf("XXX abort migration with condition\n")
+		migrationCopy.Status.Phase = virtv1.MigrationFailed
+		c.recorder.Eventf(migration, k8sv1.EventTypeWarning, FailedMigrationReason, "VMI migration was aborted")
 	} else if attachmentPodExists && podIsDown(attachmentPod) {
 		migrationCopy.Status.Phase = virtv1.MigrationFailed
 		c.recorder.Eventf(migration, k8sv1.EventTypeWarning, FailedMigrationReason, "Migration failed because target attachment pod shutdown during migration")
