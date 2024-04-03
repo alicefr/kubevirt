@@ -454,6 +454,61 @@ var _ = Describe("Workload Updater", func() {
 		})
 	})
 
+	Context("Abort changes due to an automated live update", func() {
+		var vmi *v1.VirtualMachineInstance
+
+		BeforeEach(func() {
+			vmi = api.NewMinimalVMI("testvm")
+			vmi.Namespace = k8sv1.NamespaceDefault
+			vmi.Status.Phase = v1.Running
+			vmi.Status.Conditions = []v1.VirtualMachineInstanceCondition{
+				{Type: v1.VirtualMachineInstanceIsMigratable, Status: k8sv1.ConditionTrue},
+				{Type: v1.VirtualMachineInstanceChangeAbortion, Status: k8sv1.ConditionTrue},
+			}
+			kv := newKubeVirt(0)
+			kv.Spec.WorkloadUpdateStrategy.WorkloadUpdateMethods = []v1.WorkloadUpdateMethod{v1.WorkloadUpdateMethodLiveMigrate}
+			addKubeVirt(kv)
+			vmiSource.Add(vmi)
+		})
+
+		DescribeTable("should delete the corresponding migration", func(phase v1.VirtualMachineInstanceMigrationPhase) {
+			mig := newMigration("test", vmi.Name, phase)
+			mig.Annotations = map[string]string{v1.WorkloadUpdateMigrationAnnotation: ""}
+			migrationFeeder.Add(mig)
+
+			if !mig.IsFinal() {
+				migrationInterface.EXPECT().Delete(mig.Name, &metav1.DeleteOptions{}).Return(nil)
+			}
+
+			controller.Execute()
+			if mig.IsFinal() {
+				Expect(recorder.Events).To(BeEmpty())
+			} else {
+				testutils.ExpectEvent(recorder, SuccessfulChangeAbortionReason)
+			}
+		},
+			Entry("in running phase", v1.MigrationRunning),
+			Entry("in failed phase", v1.MigrationFailed),
+			Entry("in pending phase", v1.MigrationPending),
+			Entry("in scheduling phase", v1.MigrationScheduling),
+			Entry("in scheduled phase", v1.MigrationScheduled),
+			Entry("in preparing target phase", v1.MigrationPreparingTarget),
+			Entry("in target ready phase", v1.MigrationTargetReady),
+			Entry("with an unset phase", v1.MigrationPhaseUnset),
+			Entry("in succeeded phase", v1.MigrationSucceeded),
+		)
+
+		It("should return an error if the migration hasn't be deleted", func() {
+			mig := newMigration("test", vmi.Name, v1.MigrationRunning)
+			mig.Annotations = map[string]string{v1.WorkloadUpdateMigrationAnnotation: ""}
+			migrationFeeder.Add(mig)
+			migrationInterface.EXPECT().Delete(mig.Name, &metav1.DeleteOptions{}).Return(fmt.Errorf("some error"))
+
+			controller.Execute()
+			testutils.ExpectEvent(recorder, FailedChangeAbortionReason)
+		})
+	})
+
 	AfterEach(func() {
 
 		close(stop)
