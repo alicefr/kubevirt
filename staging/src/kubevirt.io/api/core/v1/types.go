@@ -564,6 +564,9 @@ const (
 	// Indicates that the VMI is hot(un)plugging memory
 	VirtualMachineInstanceMemoryChange = "HotMemoryChange"
 
+	// Indicates if the change has been aborted while in progress
+	VirtualMachineInstanceChangeAbortion = "ChangeAbortion"
+
 	// Summarizes that all the DataVolumes attached to the VMI are Ready or not
 	VirtualMachineInstanceDataVolumesReady = "DataVolumesReady"
 
