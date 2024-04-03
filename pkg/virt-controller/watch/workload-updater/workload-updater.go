@@ -43,6 +43,12 @@ const (
 	FailedEvictVirtualMachineInstanceReason = "FailedEvict"
 	// SuccessfulEvictVirtualMachineInstanceReason is added in an event if a deletion of a VMI Succeeds
 	SuccessfulEvictVirtualMachineInstanceReason = "SuccessfulEvict"
+	// SuccessfulChangeAbortionReason is added in an event if a deletion of a
+	// migration succeeds
+	SuccessfulChangeAbortionReason = "SuccessfulChangeAbortio"
+	// FailedChangeAbortionReason is added in an event if a deletion of a
+	// migration succeeds
+	FailedChangeAbortionReason = "FailedChangeAbortio"
 )
 
 var (
@@ -87,6 +93,7 @@ type updateData struct {
 	allOutdatedVMIs        []*virtv1.VirtualMachineInstance
 	migratableOutdatedVMIs []*virtv1.VirtualMachineInstance
 	evictOutdatedVMIs      []*virtv1.VirtualMachineInstance
+	abortChangeVMIs        []*virtv1.VirtualMachineInstance
 
 	numActiveMigrations int
 }
@@ -334,6 +341,14 @@ func (c *WorkloadUpdateController) doesRequireMigration(vmi *virtv1.VirtualMachi
 	return false
 }
 
+func (c *WorkloadUpdateController) isChangeAborted(vmi *virtv1.VirtualMachineInstance) bool {
+	vmiConditions := controller.NewVirtualMachineInstanceConditionManager()
+	if !vmiConditions.HasCondition(vmi, virtv1.VirtualMachineInstanceChangeAbortion) {
+		return false
+	}
+	return len(migrationutils.ListWorkloadUpdateMigrations(c.migrationInformer, vmi.Name, vmi.Namespace)) > 0
+}
+
 func (c *WorkloadUpdateController) getUpdateData(kv *virtv1.KubeVirt) *updateData {
 	data := &updateData{}
 
@@ -362,10 +377,14 @@ func (c *WorkloadUpdateController) getUpdateData(kv *virtv1.KubeVirt) *updateDat
 	objs := c.vmiInformer.GetStore().List()
 	for _, obj := range objs {
 		vmi := obj.(*virtv1.VirtualMachineInstance)
-		if !vmi.IsRunning() || vmi.IsFinal() || vmi.DeletionTimestamp != nil {
+		switch {
+		case !vmi.IsRunning() || vmi.IsFinal() || vmi.DeletionTimestamp != nil:
 			// only consider running VMIs that aren't being shutdown
 			continue
-		} else if !c.isOutdated(vmi) && !c.doesRequireMigration(vmi) {
+		case c.isChangeAborted(vmi):
+			data.abortChangeVMIs = append(data.abortChangeVMIs, vmi)
+			continue
+		case !c.isOutdated(vmi) && !c.doesRequireMigration(vmi):
 			continue
 		}
 
@@ -466,7 +485,7 @@ func (c *WorkloadUpdateController) sync(kv *virtv1.KubeVirt) error {
 	// Rather than enqueing based on VMI activity, we keep periodically poping the loop
 	// until all VMIs are updated. Watching all VMI activity is chatty for this controller
 	// when we don't need to be that efficent in how quickly the updates are being processed.
-	if len(data.evictOutdatedVMIs) != 0 || len(data.migratableOutdatedVMIs) != 0 {
+	if len(data.evictOutdatedVMIs) != 0 || len(data.migratableOutdatedVMIs) != 0 || len(data.abortChangeVMIs) != 0 {
 		c.queue.AddAfter(key, periodicReEnqueueIntervalSeconds)
 	}
 
@@ -520,7 +539,7 @@ func (c *WorkloadUpdateController) sync(kv *virtv1.KubeVirt) error {
 		evictionCandidates = data.evictOutdatedVMIs[0:batchDeletionCount]
 	}
 
-	wgLen := len(migrationCandidates) + len(evictionCandidates)
+	wgLen := len(migrationCandidates) + len(evictionCandidates) + len(data.abortChangeVMIs)
 	wg := &sync.WaitGroup{}
 	wg.Add(wgLen)
 	errChan := make(chan error, wgLen)
@@ -585,6 +604,22 @@ func (c *WorkloadUpdateController) sync(kv *virtv1.KubeVirt) error {
 		}(vmi)
 	}
 
+	for _, vmi := range data.abortChangeVMIs {
+		go func(vmi *virtv1.VirtualMachineInstance) {
+			defer wg.Done()
+			migList := migrationutils.ListWorkloadUpdateMigrations(c.migrationInformer, vmi.Name, vmi.Namespace)
+			for _, mig := range migList {
+				err = c.clientset.VirtualMachineInstanceMigration(vmi.Namespace).Delete(mig.Name, &metav1.DeleteOptions{})
+				if err != nil && !errors.IsNotFound(err) {
+					c.recorder.Eventf(vmi, k8sv1.EventTypeNormal, FailedChangeAbortionReason, "Failed to abort change for vmi: %s: %v", vmi.Name, err)
+					errChan <- err
+				} else if err == nil {
+					c.recorder.Eventf(vmi, k8sv1.EventTypeNormal, SuccessfulChangeAbortionReason, "Aborted change for vmi: %s", vmi.Name)
+				}
+			}
+
+		}(vmi)
+	}
 	wg.Wait()
 
 	select {
