@@ -39,7 +39,9 @@ import (
 
 	"kubevirt.io/kubevirt/tests/framework/kubevirt"
 
+	"kubevirt.io/kubevirt/pkg/apimachinery/patch"
 	"kubevirt.io/kubevirt/pkg/libvmi"
+
 	"kubevirt.io/kubevirt/pkg/pointer"
 
 	expect "github.com/google/goexpect"
@@ -50,6 +52,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/rand"
 
 	"kubevirt.io/kubevirt/tests/exec"
@@ -980,4 +983,17 @@ func RunVMAndExpectLaunchWithRunStrategy(virtClient kubecli.KubevirtClient, vm *
 	}, 300*time.Second, 1*time.Second).Should(BeTrue())
 
 	return updatedVM
+}
+
+func PatchWorkloadUpdateMethodAndRolloutStrategy(kvName string, virtClient kubecli.KubevirtClient, updateStrategy *v1.KubeVirtWorkloadUpdateStrategy, rolloutStrategy *v1.VMRolloutStrategy, fgs []string) {
+	patch, err := patch.New(
+		patch.WithAdd("/spec/workloadUpdateStrategy", updateStrategy),
+		patch.WithAdd("/spec/configuration/vmRolloutStrategy", rolloutStrategy),
+		patch.WithAdd("/spec/configuration/developerConfiguration/featureGates", fgs),
+	).GeneratePayload()
+	Expect(err).ToNot(HaveOccurred())
+	EventuallyWithOffset(1, func() error {
+		_, err := virtClient.KubeVirt(flags.KubeVirtInstallNamespace).Patch(context.Background(), kvName, types.JSONPatchType, patch, metav1.PatchOptions{})
+		return err
+	}, 10*time.Second, 1*time.Second).ShouldNot(HaveOccurred())
 }
