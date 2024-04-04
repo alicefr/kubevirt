@@ -40,6 +40,7 @@ import (
 	"kubevirt.io/kubevirt/tests/framework/kubevirt"
 
 	"kubevirt.io/kubevirt/pkg/libvmi"
+
 	"kubevirt.io/kubevirt/pkg/pointer"
 
 	expect "github.com/google/goexpect"
