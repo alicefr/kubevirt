@@ -31,9 +31,9 @@ import (
 	"strings"
 	"time"
 
+	"kubevirt.io/kubevirt/pkg/network/namescheme"
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
 
-	"kubevirt.io/kubevirt/pkg/network/namescheme"
 	"kubevirt.io/kubevirt/pkg/virt-api/webhooks"
 	watchutil "kubevirt.io/kubevirt/pkg/virt-controller/watch/util"
 
@@ -70,6 +70,7 @@ import (
 	"kubevirt.io/kubevirt/pkg/util/status"
 	traceUtils "kubevirt.io/kubevirt/pkg/util/trace"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
+	volumemig "kubevirt.io/kubevirt/pkg/virt-controller/watch/volume-migration"
 )
 
 const (
@@ -115,6 +116,7 @@ const (
 	HotPlugNetworkInterfaceErrorReason = "HotPlugNetworkInterfaceError"
 	AffinityChangeErrorReason          = "AffinityChangeError"
 	HotPlugMemoryErrorReason           = "HotPlugMemoryError"
+	VolumesUpdateErrorReason           = "VolumesUpdateMemoryError"
 )
 
 const defaultMaxCrashLoopBackoffDelaySeconds = 300
@@ -833,6 +835,57 @@ func (c *VMController) handleMemoryDumpRequest(vm *virtv1.VirtualMachine, vmi *v
 		}
 
 		vm.Spec.Template.Spec = *removeMemoryDumpVolumeFromVMISpec(&vm.Spec.Template.Spec, vm.Status.MemoryDumpRequest.ClaimName)
+	}
+
+	return nil
+}
+
+func (c *VMController) handleVolumeUpdateRequest(oldSpec *virtv1.VirtualMachineSpec, vm *virtv1.VirtualMachine,
+	vmi *virtv1.VirtualMachineInstance) error {
+	if vmi == nil {
+		return nil
+	}
+	if equality.Semantic.DeepEqual(vmi.Spec.Volumes, vm.Spec.Template.Spec.Volumes) {
+		return nil
+	}
+
+	vmConditions := controller.NewVirtualMachineConditionManager()
+	// Abort the volume migration if any of the previous migrated volumes
+	// has changed
+	if volMigAbort, err := volumemig.VolumeMigrationAbortion(c.clientset, vmi, vm); volMigAbort {
+		return err
+	}
+
+	switch {
+	case vm.Spec.UpdateVolumesStrategy == nil ||
+		*vm.Spec.UpdateVolumesStrategy == virtv1.UpdateVolumesStrategyReplacement:
+		if !vmConditions.HasCondition(vm, virtv1.VirtualMachineRestartRequired) {
+			vmConditions.UpdateCondition(vm, &virtv1.VirtualMachineCondition{
+				Type:               virtv1.VirtualMachineRestartRequired,
+				LastTransitionTime: v1.Now(),
+				Status:             k8score.ConditionTrue,
+				Message:            "the volumes replacement is effective only after restart",
+			})
+		}
+	case *vm.Spec.UpdateVolumesStrategy == virtv1.UpdateVolumesStrategyMigration:
+		// Validate if the update volumes can be migrated
+		if valid, msg := volumemig.ValidateVolumes(vmi, vm); !valid {
+			vmConditions.UpdateCondition(vm, &virtv1.VirtualMachineCondition{
+				Type:               virtv1.VirtualMachineInstanceVolumesChange,
+				LastTransitionTime: v1.Now(),
+				Status:             k8score.ConditionTrue,
+				Message:            msg,
+			})
+			return nil
+		}
+		if err := volumemig.PatchVMIStatusWithMigratedVolumes(c.clientset, c.pvcStore, vmi, vm); err != nil {
+			return err
+		}
+		if _, err := volumemig.PatchVMIVolumes(c.clientset, vmi, vm); err != nil {
+			return err
+		}
+	default:
+		return fmt.Errorf("updateVolumes strategy not recognized: %s", *vm.Spec.UpdateVolumesStrategy)
 	}
 
 	return nil
@@ -2899,6 +2952,20 @@ func (c *VMController) trimDoneVolumeRequests(vm *virtv1.VirtualMachine) {
 	vm.Status.VolumeRequests = tmpVolRequests
 }
 
+func liveUpdateVolumes(lastSeenVMSpec *virtv1.VirtualMachineSpec, vm *virtv1.VirtualMachine) {
+	oldVols := make(map[string]bool)
+	for _, v := range lastSeenVMSpec.Template.Spec.Volumes {
+		if v.DataVolume != nil || v.PersistentVolumeClaim != nil {
+			oldVols[v.Name] = true
+		}
+	}
+	for i, v := range vm.Spec.Template.Spec.Volumes {
+		if _, ok := oldVols[v.Name]; ok {
+			lastSeenVMSpec.Template.Spec.Volumes[i] = v
+		}
+	}
+}
+
 // addRestartRequiredIfNeeded adds the restartRequired condition to the VM if any non-live-updatable field was changed
 func (c *VMController) addRestartRequiredIfNeeded(lastSeenVMSpec *virtv1.VirtualMachineSpec, vm *virtv1.VirtualMachine) (*virtv1.VirtualMachine, bool) {
 	if lastSeenVMSpec == nil {
@@ -2918,6 +2985,7 @@ func (c *VMController) addRestartRequiredIfNeeded(lastSeenVMSpec *virtv1.Virtual
 		}
 		lastSeenVMSpec.Template.Spec.NodeSelector = vm.Spec.Template.Spec.NodeSelector
 		lastSeenVMSpec.Template.Spec.Affinity = vm.Spec.Template.Spec.Affinity
+		liveUpdateVolumes(lastSeenVMSpec, vm)
 	}
 
 	if !equality.Semantic.DeepEqual(lastSeenVMSpec.Template.Spec, vm.Spec.Template.Spec) {
@@ -3083,6 +3151,14 @@ func (c *VMController) sync(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachin
 					reason: HotPlugMemoryErrorReason,
 				}
 			}
+
+			if err := c.handleVolumeUpdateRequest(startVMSpec, vmCopy, vmi); err != nil {
+				syncErr = &syncErrorImpl{
+					err:    fmt.Errorf("error encountered while handling volumes update requests: %v", err),
+					reason: VolumesUpdateErrorReason,
+				}
+			}
+
 		}
 
 		if syncErr == nil {
