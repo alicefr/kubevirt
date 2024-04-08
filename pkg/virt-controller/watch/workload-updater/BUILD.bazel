@@ -8,6 +8,7 @@ go_library(
     deps = [
         "//pkg/controller:go_default_library",
         "//pkg/monitoring/metrics/virt-controller:go_default_library",
+        "//pkg/storage/types:go_default_library",
         "//pkg/util/migrations:go_default_library",
         "//pkg/util/status:go_default_library",
         "//pkg/virt-config:go_default_library",
