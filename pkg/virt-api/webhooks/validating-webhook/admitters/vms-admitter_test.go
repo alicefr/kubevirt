@@ -52,9 +52,11 @@ import (
 
 	"kubevirt.io/kubevirt/pkg/instancetype"
 	"kubevirt.io/kubevirt/pkg/pointer"
+	virtpointer "kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/testutils"
 	"kubevirt.io/kubevirt/pkg/virt-api/webhooks"
 	virtconfig "kubevirt.io/kubevirt/pkg/virt-config"
+
 	"kubevirt.io/kubevirt/pkg/virt-config/deprecation"
 	"kubevirt.io/kubevirt/pkg/virt-launcher/virtwrap/converter"
 
@@ -2050,6 +2052,19 @@ var _ = Describe("Validating VM Admitter", func() {
 					Message: "Memory hotplug is only available for x86_64 VMs",
 				}),
 			)
+		})
+
+		Context("Update volume strategy", func() {
+			It("should reject the VM creation if the feature gate isn't enabled", func() {
+				vm.Spec.UpdateVolumesStrategy = virtpointer.P(v1.UpdateVolumesStrategyReplacement)
+				response := admitVm(vmsAdmitter, vm)
+				Expect(response.Allowed).To(BeFalse())
+				Expect(response.Result.Details.Causes).To(ContainElement(metav1.StatusCause{
+					Type:    metav1.CauseTypeFieldValueInvalid,
+					Field:   "updateVolumesStrategy",
+					Message: fmt.Sprintf("%s feature gate is not enabled in kubevirt-config", virtconfig.VolumesUpdateStrategy),
+				}))
+			})
 		})
 	})
 
