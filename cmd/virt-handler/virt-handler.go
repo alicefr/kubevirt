@@ -69,7 +69,6 @@ import (
 	clientutil "kubevirt.io/client-go/util"
 
 	"kubevirt.io/kubevirt/pkg/certificates/bootstrap"
-	containerdisk "kubevirt.io/kubevirt/pkg/container-disk"
 	"kubevirt.io/kubevirt/pkg/controller"
 	metrics "kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler"
 	metricshandler "kubevirt.io/kubevirt/pkg/monitoring/metrics/virt-handler/handler"
@@ -201,17 +200,6 @@ func (app *virtHandlerApp) Run() {
 	logger.V(1).Infof("hostname %s", app.HostOverride)
 	var err error
 
-	// Copy container-disk binary
-	targetFile := filepath.Join(app.VirtLibDir, "/init/usr/bin/container-disk")
-	err = os.MkdirAll(filepath.Dir(targetFile), os.ModePerm)
-	if err != nil {
-		panic(err)
-	}
-	err = copy("/usr/bin/container-disk", targetFile)
-	if err != nil {
-		panic(err)
-	}
-
 	app.reloadableRateLimiter = ratelimiter.NewReloadableRateLimiter(flowcontrol.NewTokenBucketRateLimiter(virtconfig.DefaultVirtHandlerQPS, virtconfig.DefaultVirtHandlerBurst))
 	clientConfig, err := kubecli.GetKubevirtClientConfig()
 	if err != nil {
@@ -275,7 +263,6 @@ func (app *virtHandlerApp) Run() {
 
 	cmdclient.SetPodsBaseDir("/pods")
 	cmdclient.SetLegacyBaseDir(app.VirtShareDir)
-	containerdisk.SetKubeletPodsDirectory(app.KubeletPodsDir)
 	err = os.MkdirAll(cmdclient.LegacySocketsDirectory(), 0755)
 	if err != nil {
 		panic(err)
