@@ -707,10 +707,10 @@ func (l *LibvirtDomainManager) preStartHook(vmi *v1.VirtualMachineInstance, doma
 
 	logger.Info("Executing PreStartHook on VMI pod environment")
 
-	disksInfo := map[string]*containerdisk.DiskInfo{}
+	disksInfo := map[string]*containerdisk.ImgInfo{}
 	for k, v := range l.disksInfo {
 		if v != nil {
-			disksInfo[k] = &containerdisk.DiskInfo{
+			disksInfo[k] = &containerdisk.ImgInfo{
 				Format:      v.Format,
 				BackingFile: v.BackingFile,
 				ActualSize:  int64(v.ActualSize),
@@ -768,10 +768,16 @@ func (l *LibvirtDomainManager) preStartHook(vmi *v1.VirtualMachineInstance, doma
 	}
 
 	// Create ephemeral disk for container disks
-	err = containerdisk.CreateEphemeralImages(vmi, l.ephemeralDiskCreator, disksInfo)
+	err = containerdisk.CreateEphemeralImages(vmi, l.ephemeralDiskCreator)
 	if err != nil {
 		return domain, fmt.Errorf("preparing ephemeral container disk images failed: %v", err)
 	}
+
+	// Access directory for kernel boot
+	if err := containerdisk.AccessKernelBoot(vmi); err != nil {
+		return domain, fmt.Errorf("preparing kernel boot artifacts: %v", err)
+	}
+
 	// Create images for volumes that are marked ephemeral.
 	err = l.ephemeralDiskCreator.CreateEphemeralImages(vmi, domain)
 	if err != nil {
@@ -1066,7 +1072,7 @@ func (l *LibvirtDomainManager) SyncVMI(vmi *v1.VirtualMachineInstance, allowEmul
 	}
 
 	if err := converter.Convert_v1_VirtualMachineInstance_To_api_Domain(vmi, domain, c); err != nil {
-		logger.Error("Conversion failed.")
+		logger.Errorf("Conversion failed: %v", err)
 		return nil, err
 	}
 
