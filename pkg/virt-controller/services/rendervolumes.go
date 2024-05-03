@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	containerdisk "kubevirt.io/kubevirt/pkg/container-disk"
 	backendstorage "kubevirt.io/kubevirt/pkg/storage/backend-storage"
 
 	k8sv1 "k8s.io/api/core/v1"
@@ -167,7 +168,18 @@ func withVMIVolumes(pvcStore cache.Store, vmiSpecVolumes []v1.Volume, vmiVolumeS
 			if volume.CloudInitConfigDrive != nil {
 				renderer.handleCloudInitConfigDrive(volume)
 			}
+
+			if volume.ContainerDisk != nil {
+				renderer.handleContainerDisk(volume)
+			}
 		}
+		return nil
+	}
+}
+
+func withKernelBootVolume() VolumeRendererOption {
+	return func(renderer *VolumeRenderer) error {
+		renderer.addKernelBootVolume()
 		return nil
 	}
 }
@@ -654,6 +666,20 @@ func (vr *VolumeRenderer) addConfigMapVolume(volume v1.Volume) {
 	})
 }
 
+func (vr *VolumeRenderer) addKernelBootVolume() {
+	vr.podVolumes = append(vr.podVolumes, k8sv1.Volume{
+		Name: containerdisk.KernelBootVolumeName,
+		VolumeSource: k8sv1.VolumeSource{
+			EmptyDir: &k8sv1.EmptyDirVolumeSource{},
+		},
+	})
+	vr.podVolumeMounts = append(vr.podVolumeMounts, k8sv1.VolumeMount{
+		Name:      containerdisk.KernelBootVolumeName,
+		MountPath: containerdisk.GetKernelBootArtifactDirFromLauncherView(),
+	})
+
+}
+
 func (vr *VolumeRenderer) addConfigMapVolumeMount(volume v1.Volume) {
 	vr.podVolumeMounts = append(vr.podVolumeMounts, k8sv1.VolumeMount{
 		Name:      volume.Name,
@@ -747,4 +773,18 @@ func (vr *VolumeRenderer) handleDownwardMetrics(volume v1.Volume) {
 		Name:      volume.Name,
 		MountPath: config.DownwardMetricDisksDir,
 	})
+}
+
+func (vr *VolumeRenderer) handleContainerDisk(volume v1.Volume) {
+	if volume.VolumeSource.ContainerDisk == nil {
+		return
+	}
+	name := containerdisk.GetPidfileVolumeName(volume.Name)
+	vr.podVolumes = append(vr.podVolumes, k8sv1.Volume{
+		Name: name,
+		VolumeSource: k8sv1.VolumeSource{
+			EmptyDir: &k8sv1.EmptyDirVolumeSource{},
+		},
+	})
+	vr.podVolumeMounts = append(vr.podVolumeMounts, containerdisk.GetVolumeMountPidfileContainerDisk(volume.Name))
 }
