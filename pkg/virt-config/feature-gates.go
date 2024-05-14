@@ -81,6 +81,8 @@ const (
 
 	// VolumesUpdateStrategy enables to specify the strategy on the volume updates.
 	VolumesUpdateStrategy = "VolumesUpdateStrategy"
+	// VolumeMigration enables to migrate the storage.
+	VolumeMigration = "VolumeMigration"
 )
 
 func (config *ClusterConfig) isFeatureGateEnabled(featureGate string) bool {
@@ -252,4 +254,8 @@ func (config *ClusterConfig) AlignCPUsEnabled() bool {
 
 func (config *ClusterConfig) VolumesUpdateStrategyEnabled() bool {
 	return config.isFeatureGateEnabled(VolumesUpdateStrategy)
+}
+
+func (config *ClusterConfig) VolumeMigrationEnabled() bool {
+	return config.isFeatureGateEnabled(VolumeMigration)
 }
