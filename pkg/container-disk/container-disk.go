@@ -30,6 +30,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	kubev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -63,6 +64,10 @@ var digestRegex = regexp.MustCompile(`sha256:([a-zA-Z0-9]+)`)
 
 func GetDiskTargetName(volumeIndex int) string {
 	return fmt.Sprintf("disk_%d.img", volumeIndex)
+}
+
+func GetContainerDisksDirLauncherView() string {
+	return mountBaseDir
 }
 
 func GetDiskTargetPathFromLauncherView(volumeIndex int) string {
@@ -249,7 +254,7 @@ func generateContainerFromVolume(vmi *v1.VirtualMachineInstance, config *virtcon
 	case isKernelBoot:
 		container.Name = toContainerName(KernelBootVolumeName)
 		container.VolumeMounts = append(container.VolumeMounts, kubev1.VolumeMount{
-			Name:      KernelBootVolumeName,
+			Name:      GetPidfileVolumeName(KernelBootVolumeName),
 			MountPath: PidFileDir,
 		})
 	default:
@@ -268,7 +273,7 @@ func GetPidfileVolumeName(name string) string {
 }
 
 func GetPidfileDir(name string) string {
-	return filepath.Join(mountBaseDir, name)
+	return filepath.Join("/var/run/container-disks", name)
 }
 
 func GetPidfilePath(name string) string {
@@ -413,10 +418,6 @@ func CreateEphemeralImages(
 	return nil
 }
 
-func getContainerDiskSocketBasePath(baseDir, podUID string) string {
-	return fmt.Sprintf("%s/pods/%s/volumes/kubernetes.io~empty-dir/container-disks", baseDir, podUID)
-}
-
 // ExtractImageIDsFromSourcePod takes the VMI and its source pod to determine the exact image used by containerdisks and boot container images,
 // which is recorded in the status section of a started pod; if the status section does not contain this info the tag is used.
 // It returns a map where the key is the vlume name and the value is the imageID
@@ -474,4 +475,41 @@ func toContainerName(volumeName string) string {
 
 func toVolumeName(containerName string) string {
 	return strings.TrimPrefix(containerName, "volume")
+}
+
+func WaitContainerDisksToBecomeReady(vmi *v1.VirtualMachineInstance, timeout time.Duration) error {
+	completed := false
+	errChan := make(chan error, 1)
+	go func() {
+		for {
+			for i, v := range vmi.Spec.Volumes {
+				if v.ContainerDisk != nil {
+					path := GetPidfilePath(v.Name)
+					_, err := os.Stat(path)
+					switch {
+					case errors.Is(err, os.ErrNotExist):
+						fmt.Printf("XXX path %s does not exist\n", path)
+						break
+					case err != nil:
+						errChan <- err
+						return
+					}
+				}
+				if i == len(vmi.Spec.Volumes)-1 {
+					completed = true
+				}
+			}
+			if completed {
+				errChan <- nil
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	select {
+	case err := <-errChan:
+		return err
+	case <-time.After(timeout * time.Second):
+		return fmt.Errorf("timeout waiting for container disks to become ready")
+	}
 }

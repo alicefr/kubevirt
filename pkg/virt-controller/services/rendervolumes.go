@@ -56,7 +56,7 @@ func (vr *VolumeRenderer) Mounts() []k8sv1.VolumeMount {
 		mountPath("private", util.VirtPrivateDir),
 		mountPath("public", util.VirtShareDir),
 		mountPath("ephemeral-disks", vr.ephemeralDiskDir),
-		mountPathWithPropagation(containerDisks, vr.containerDiskDir, k8sv1.MountPropagationHostToContainer),
+		mountPath("container-disk", containerdisk.GetContainerDisksDirLauncherView()),
 		mountPath("libvirt-runtime", "/var/run/libvirt"),
 		mountPath("sockets", filepath.Join(vr.virtShareDir, "sockets")),
 	}
@@ -71,7 +71,7 @@ func (vr *VolumeRenderer) Volumes() []k8sv1.Volume {
 		emptyDirVolume(virtBinDir),
 		emptyDirVolume("libvirt-runtime"),
 		emptyDirVolume("ephemeral-disks"),
-		emptyDirVolume(containerDisks),
+		emptyDirVolume("container-disk"),
 	}
 	return append(volumes, vr.podVolumes...)
 }
@@ -667,17 +667,12 @@ func (vr *VolumeRenderer) addConfigMapVolume(volume v1.Volume) {
 }
 
 func (vr *VolumeRenderer) addKernelBootVolume() {
-	vr.podVolumes = append(vr.podVolumes, k8sv1.Volume{
-		Name: containerdisk.KernelBootVolumeName,
-		VolumeSource: k8sv1.VolumeSource{
-			EmptyDir: &k8sv1.EmptyDirVolumeSource{},
-		},
-	})
-	vr.podVolumeMounts = append(vr.podVolumeMounts, k8sv1.VolumeMount{
-		Name:      containerdisk.KernelBootVolumeName,
-		MountPath: containerdisk.GetKernelBootArtifactDirFromLauncherView(),
-	})
-
+	vr.podVolumes = append(vr.podVolumes,
+		emptyDirVolume(containerdisk.GetPidfileVolumeName(containerdisk.KernelBootVolumeName)),
+		emptyDirVolume(containerdisk.KernelBootVolumeName))
+	vr.podVolumeMounts = append(vr.podVolumeMounts,
+		containerdisk.GetVolumeMountPidfileContainerDisk(containerdisk.KernelBootVolumeName),
+		mountPath(containerdisk.KernelBootVolumeName, containerdisk.GetKernelBootArtifactDirFromLauncherView()))
 }
 
 func (vr *VolumeRenderer) addConfigMapVolumeMount(volume v1.Volume) {
@@ -779,9 +774,8 @@ func (vr *VolumeRenderer) handleContainerDisk(volume v1.Volume) {
 	if volume.VolumeSource.ContainerDisk == nil {
 		return
 	}
-	name := containerdisk.GetPidfileVolumeName(volume.Name)
 	vr.podVolumes = append(vr.podVolumes, k8sv1.Volume{
-		Name: name,
+		Name: containerdisk.GetPidfileVolumeName(volume.Name),
 		VolumeSource: k8sv1.VolumeSource{
 			EmptyDir: &k8sv1.EmptyDirVolumeSource{},
 		},
