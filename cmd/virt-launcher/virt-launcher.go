@@ -41,6 +41,7 @@ import (
 
 	cloudinit "kubevirt.io/kubevirt/pkg/cloud-init"
 	"kubevirt.io/kubevirt/pkg/config"
+	containerdisk "kubevirt.io/kubevirt/pkg/container-disk"
 	"kubevirt.io/kubevirt/pkg/downwardmetrics"
 	ephemeraldisk "kubevirt.io/kubevirt/pkg/ephemeral-disk"
 	"kubevirt.io/kubevirt/pkg/hooks"
@@ -467,6 +468,10 @@ func main() {
 		log.Log.Infof("Received signal %s", s.String())
 		close(signalStopChan)
 	}()
+
+	if err := containerdisk.NewContainerDiskManager().WaitContainerDisksToBecomeReady(vmi, 30); err != nil {
+		panic(err)
+	}
 
 	// Marking Ready allows the container's readiness check to pass.
 	// This informs virt-controller that virt-launcher is ready to handle

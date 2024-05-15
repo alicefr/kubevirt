@@ -767,14 +767,15 @@ func (l *LibvirtDomainManager) preStartHook(vmi *v1.VirtualMachineInstance, doma
 		return domain, fmt.Errorf("preparing the pod network failed: %v", err)
 	}
 
+	containerDiskManager := containerdisk.NewContainerDiskManager()
 	// Create ephemeral disk for container disks
-	err = containerdisk.CreateEphemeralImages(vmi, l.ephemeralDiskCreator)
+	err = containerDiskManager.CreateEphemeralImages(vmi, l.ephemeralDiskCreator)
 	if err != nil {
 		return domain, fmt.Errorf("preparing ephemeral container disk images failed: %v", err)
 	}
 
 	// Access directory for kernel boot
-	if err := containerdisk.AccessKernelBoot(vmi); err != nil {
+	if err := containerDiskManager.AccessKernelBoot(vmi); err != nil {
 		return domain, fmt.Errorf("preparing kernel boot artifacts: %v", err)
 	}
 

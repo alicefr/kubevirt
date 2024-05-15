@@ -848,8 +848,9 @@ func Convert_v1_ContainerDiskSource_To_api_Disk(source *v1.Volume, _ *v1.Contain
 	if disk.Type == "lun" {
 		return fmt.Errorf(deviceTypeNotCompatibleFmt, disk.Alias.GetName())
 	}
+	containerDiksManager := containerdisk.NewContainerDiskManager()
 	// Get the source path separately from the overlay file as it might not be have created yet
-	sourcePath, err := containerdisk.GetContainerDiksPath(source)
+	sourcePath, err := containerDiksManager.GetContainerDiksPath(source)
 	if err != nil {
 		return err
 	}
@@ -867,7 +868,7 @@ func Convert_v1_ContainerDiskSource_To_api_Disk(source *v1.Volume, _ *v1.Contain
 			Type: info.Format,
 		},
 		Source: &api.DiskSource{
-			File: containerdisk.GetDiskTargetPathFromLauncherView(diskIndex),
+			File: containerDiksManager.GetDiskTargetPathFromLauncherView(diskIndex),
 		},
 		Type: "file",
 	}
@@ -1285,16 +1286,16 @@ func Convert_v1_Firmware_To_related_apis(vmi *v1.VirtualMachineInstance, domain 
 
 	if util.HasKernelBootContainerImage(vmi) {
 		kb := firmware.KernelBoot
-
+		containerDiskManager := containerdisk.NewContainerDiskManager()
 		log.Log.Object(vmi).Infof("kernel boot defined for VMI. Converting to domain XML")
 		if kb.Container.KernelPath != "" {
-			kernelPath := containerdisk.GetKernelBootArtifactPathFromLauncherView(kb.Container.KernelPath)
+			kernelPath := containerDiskManager.GetKernelBootArtifactPathFromLauncherView(kb.Container.KernelPath)
 			log.Log.Object(vmi).Infof("setting kernel path for kernel boot: " + kernelPath)
 			domain.Spec.OS.Kernel = kernelPath
 		}
 
 		if kb.Container.InitrdPath != "" {
-			initrdPath := containerdisk.GetKernelBootArtifactPathFromLauncherView(kb.Container.InitrdPath)
+			initrdPath := containerDiskManager.GetKernelBootArtifactPathFromLauncherView(kb.Container.InitrdPath)
 			log.Log.Object(vmi).Infof("setting initrd path for kernel boot: " + initrdPath)
 			domain.Spec.OS.Initrd = initrdPath
 		}

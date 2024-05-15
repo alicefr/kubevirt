@@ -30,6 +30,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	kubev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -53,9 +54,21 @@ const (
 	KernelBootName         = "kernel-boot"
 	KernelBootVolumeName   = KernelBootName + "-volume"
 	DiskSourceFallbackPath = "/disk"
-	PidFileDir             = "/var/run/containerdisk"
+	pidFileDir             = "/var/run/containerdisk"
 	Pidfile                = "pidfile"
 )
+
+type ContainerDiskManager struct {
+	pidFileDir   string
+	mountBaseDir string
+}
+
+func NewContainerDiskManager() *ContainerDiskManager {
+	return &ContainerDiskManager{
+		pidFileDir:   pidFileDir,
+		mountBaseDir: mountBaseDir,
+	}
+}
 
 const ephemeralStorageOverheadSize = "50M"
 
@@ -65,24 +78,28 @@ func GetDiskTargetName(volumeIndex int) string {
 	return fmt.Sprintf("disk_%d.img", volumeIndex)
 }
 
-func GetDiskTargetPathFromLauncherView(volumeIndex int) string {
-	return filepath.Join(mountBaseDir, GetDiskTargetName(volumeIndex))
+func (c *ContainerDiskManager) GetContainerDisksDirLauncherView() string {
+	return c.mountBaseDir
 }
 
-func GetKernelBootArtifactDirFromLauncherView() string {
-	return filepath.Join(mountBaseDir, KernelBootVolumeName)
+func (c *ContainerDiskManager) GetDiskTargetPathFromLauncherView(volumeIndex int) string {
+	return filepath.Join(c.mountBaseDir, GetDiskTargetName(volumeIndex))
 }
 
-func GetKernelBootArtifactPathFromLauncherView(artifact string) string {
+func (c *ContainerDiskManager) GetKernelBootArtifactDirFromLauncherView() string {
+	return filepath.Join(c.mountBaseDir, KernelBootVolumeName)
+}
+
+func (c *ContainerDiskManager) GetKernelBootArtifactPathFromLauncherView(artifact string) string {
 	artifactBase := filepath.Base(artifact)
-	dir := GetKernelBootArtifactDirFromLauncherView()
+	dir := c.GetKernelBootArtifactDirFromLauncherView()
 	return filepath.Join(dir, artifactBase)
 }
 
 // GetDiskTargetPartFromLauncherView returns (path to disk image, image type, and error)
-func GetDiskTargetPartFromLauncherView(volumeIndex int) (string, error) {
+func (c *ContainerDiskManager) GetDiskTargetPartFromLauncherView(volumeIndex int) (string, error) {
 
-	path := GetDiskTargetPathFromLauncherView(volumeIndex)
+	path := c.GetDiskTargetPathFromLauncherView(volumeIndex)
 	exists, err := diskutils.FileExists(path)
 	if err != nil {
 		return "", err
@@ -249,14 +266,14 @@ func generateContainerFromVolume(vmi *v1.VirtualMachineInstance, config *virtcon
 	case isKernelBoot:
 		container.Name = toContainerName(KernelBootVolumeName)
 		container.VolumeMounts = append(container.VolumeMounts, kubev1.VolumeMount{
-			Name:      KernelBootVolumeName,
-			MountPath: PidFileDir,
+			Name:      GetPidfileVolumeName(KernelBootVolumeName),
+			MountPath: pidFileDir,
 		})
 	default:
 		container.Name = toContainerName(volume.Name)
 		container.VolumeMounts = append(container.VolumeMounts, kubev1.VolumeMount{
 			Name:      GetPidfileVolumeName(volume.Name),
-			MountPath: PidFileDir,
+			MountPath: pidFileDir,
 		})
 	}
 
@@ -267,23 +284,23 @@ func GetPidfileVolumeName(name string) string {
 	return fmt.Sprintf("pidfile-%s", name)
 }
 
-func GetPidfileDir(name string) string {
-	return filepath.Join(mountBaseDir, name)
+func (c *ContainerDiskManager) GetPidfileDir(name string) string {
+	return filepath.Join(c.pidFileDir, name)
 }
 
-func GetPidfilePath(name string) string {
-	return filepath.Join(GetPidfileDir(name), Pidfile)
+func (c *ContainerDiskManager) GetPidfilePath(name string) string {
+	return filepath.Join(c.GetPidfileDir(name), Pidfile)
 }
 
-func GetVolumeMountPidfileContainerDisk(name string) k8sv1.VolumeMount {
+func (c *ContainerDiskManager) GetVolumeMountPidfileContainerDisk(name string) k8sv1.VolumeMount {
 	return k8sv1.VolumeMount{
 		Name:      GetPidfileVolumeName(name),
-		MountPath: GetPidfileDir(name),
+		MountPath: c.GetPidfileDir(name),
 	}
 }
 
-func readPidfile(volName string) (int, error) {
-	t, err := os.ReadFile(GetPidfilePath(volName))
+func (c *ContainerDiskManager) readPidfile(volName string) (int, error) {
+	t, err := os.ReadFile(c.GetPidfilePath(volName))
 	if err != nil {
 		return -1, err
 	}
@@ -294,11 +311,11 @@ func readPidfile(volName string) (int, error) {
 	return pid, nil
 }
 
-func GetContainerDiksPath(volume *v1.Volume) (string, error) {
+func (c *ContainerDiskManager) GetContainerDiksPath(volume *v1.Volume) (string, error) {
 	if volume.VolumeSource.ContainerDisk == nil {
 		return "", fmt.Errorf("not a container disk")
 	}
-	pid, err := readPidfile(volume.Name)
+	pid, err := c.readPidfile(volume.Name)
 	if err != nil {
 		return "", err
 	}
@@ -329,25 +346,25 @@ func createSymlink(oldpath, newpath string) error {
 	return os.Symlink(oldpath, newpath)
 }
 
-func AccessKernelBoot(vmi *v1.VirtualMachineInstance) error {
+func (c *ContainerDiskManager) AccessKernelBoot(vmi *v1.VirtualMachineInstance) error {
 	if !util.HasKernelBootContainerImage(vmi) {
 		return nil
 	}
-	pid, err := readPidfile(KernelBootVolumeName)
+	pid, err := c.readPidfile(KernelBootVolumeName)
 	if err != nil {
 		return err
 	}
 
 	kbc := vmi.Spec.Domain.Firmware.KernelBoot.Container
 	// Create symlink for kernel path
-	kernelPath := GetKernelBootArtifactPathFromLauncherView(kbc.KernelPath)
+	kernelPath := c.GetKernelBootArtifactPathFromLauncherView(kbc.KernelPath)
 	contkernelPath := filepath.Join("/proc", strconv.Itoa(pid), "/root", kbc.KernelPath)
 	if err := createSymlink(contkernelPath, kernelPath); err != nil {
 		return err
 	}
 
 	// Create symlink for the initrd path
-	initrdPath := GetKernelBootArtifactPathFromLauncherView(kbc.InitrdPath)
+	initrdPath := c.GetKernelBootArtifactPathFromLauncherView(kbc.InitrdPath)
 	contInitrdPath := filepath.Join("/proc", strconv.Itoa(pid), "/root", kbc.InitrdPath)
 	if err := createSymlink(contInitrdPath, initrdPath); err != nil {
 		return err
@@ -383,7 +400,7 @@ func GetImageInfo(img string) (*ImgInfo, error) {
 	return &info, nil
 }
 
-func CreateEphemeralImages(
+func (c *ContainerDiskManager) CreateEphemeralImages(
 	vmi *v1.VirtualMachineInstance,
 	diskCreator ephemeraldisk.EphemeralDiskCreatorInterface,
 ) error {
@@ -391,7 +408,7 @@ func CreateEphemeralImages(
 		if volume.VolumeSource.ContainerDisk == nil {
 			continue
 		}
-		backingFile, err := GetContainerDiksPath(&volume)
+		backingFile, err := c.GetContainerDiksPath(&volume)
 		if err != nil {
 			return err
 		}
@@ -401,7 +418,7 @@ func CreateEphemeralImages(
 		}
 		// Create symlink to the old location for containerdisk alpha2 where the backing image was created.
 		// Using a constant path will faciliate upgraded and migrations
-		symlink := GetDiskTargetPathFromLauncherView(i)
+		symlink := c.GetDiskTargetPathFromLauncherView(i)
 		if err := createSymlink(backingFile, symlink); err != nil {
 			return err
 		}
@@ -411,10 +428,6 @@ func CreateEphemeralImages(
 	}
 
 	return nil
-}
-
-func getContainerDiskSocketBasePath(baseDir, podUID string) string {
-	return fmt.Sprintf("%s/pods/%s/volumes/kubernetes.io~empty-dir/container-disks", baseDir, podUID)
 }
 
 // ExtractImageIDsFromSourcePod takes the VMI and its source pod to determine the exact image used by containerdisks and boot container images,
@@ -474,4 +487,46 @@ func toContainerName(volumeName string) string {
 
 func toVolumeName(containerName string) string {
 	return strings.TrimPrefix(containerName, "volume")
+}
+
+func (c *ContainerDiskManager) WaitContainerDisksToBecomeReady(vmi *v1.VirtualMachineInstance, timeout time.Duration) error {
+	errChan := make(chan error, 1)
+	cds := make(map[string]bool)
+	for _, v := range vmi.Spec.Volumes {
+		if v.ContainerDisk != nil {
+			cds[v.Name] = true
+		}
+
+	}
+	if util.HasKernelBootContainerImage(vmi) {
+		cds[KernelBootVolumeName] = true
+	}
+	go func() {
+		for {
+			for v, _ := range cds {
+				path := c.GetPidfilePath(v)
+				_, err := os.Stat(path)
+				switch {
+				case errors.Is(err, os.ErrNotExist):
+					break
+				case err != nil:
+					errChan <- err
+					return
+				default:
+					delete(cds, v)
+				}
+			}
+			if len(cds) == 0 {
+				errChan <- nil
+				break
+			}
+			time.Sleep(1 * time.Second)
+		}
+	}()
+	select {
+	case err := <-errChan:
+		return err
+	case <-time.After(timeout * time.Second):
+		return fmt.Errorf("timeout waiting for container disks to become ready")
+	}
 }
