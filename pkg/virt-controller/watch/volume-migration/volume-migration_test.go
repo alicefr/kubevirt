@@ -85,16 +85,6 @@ var _ = Describe("Volume Migration", func() {
 			), libvmi.NewVirtualMachine(libvmi.New(
 				libvmi.WithPersistentVolumeClaim("disk0", "vol2"), withHotpluggedVolume("disk1", "vol4"),
 			)), fmt.Errorf("invalid volumes to update with migration: hotplugged: [disk1]")),
-			Entry("with an invalid datavolume", libvmi.New(
-				libvmi.WithPersistentVolumeClaim("disk0", "vol0"), libvmi.WithDataVolume("disk1", "vol1"),
-			), libvmi.NewVirtualMachine(libvmi.New(
-				libvmi.WithPersistentVolumeClaim("disk0", "vol2"), libvmi.WithDataVolume("disk1", "vol4"),
-			)), fmt.Errorf("invalid volumes to update with migration: DVs: [disk1]")),
-			Entry("with an invalid datavolume template", libvmi.New(
-				libvmi.WithPersistentVolumeClaim("disk0", "vol0"), libvmi.WithDataVolume("disk1", "vol1"),
-			), libvmi.NewVirtualMachine(libvmi.New(
-				libvmi.WithPersistentVolumeClaim("disk0", "vol2"), libvmi.WithPersistentVolumeClaim("disk1", "vol3"),
-			), withDataVolumeTemplate("vol3")), fmt.Errorf("invalid volumes to update with migration: DV templates: [disk1]")),
 		)
 	})
 

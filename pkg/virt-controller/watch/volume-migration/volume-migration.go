@@ -43,19 +43,16 @@ const invalidUpdateErrMsg = "The volume can only be reverted to the previous ver
 
 // invalidVols includes the invalid volumes for the volume migration
 type invalidVols struct {
-	hotplugged  []string
-	fs          []string
-	shareable   []string
-	luns        []string
-	dvs         []string
-	dvTemplates []string
+	hotplugged []string
+	fs         []string
+	shareable  []string
+	luns       []string
 }
 
 func (vols *invalidVols) errorMessage() error {
 	var s strings.Builder
 	if len(vols.hotplugged) < 1 && len(vols.fs) < 1 &&
-		len(vols.shareable) < 1 && len(vols.luns) < 1 &&
-		len(vols.dvs) < 1 && len(vols.dvTemplates) < 1 {
+		len(vols.shareable) < 1 && len(vols.luns) < 1 {
 		return nil
 	}
 	s.WriteString("invalid volumes to update with migration:")
@@ -70,12 +67,6 @@ func (vols *invalidVols) errorMessage() error {
 	}
 	if len(vols.luns) > 0 {
 		s.WriteString(fmt.Sprintf(" luns: %v", vols.luns))
-	}
-	if len(vols.dvs) > 0 {
-		s.WriteString(fmt.Sprintf(" DVs: %v", vols.dvs))
-	}
-	if len(vols.dvTemplates) > 0 {
-		s.WriteString(fmt.Sprintf(" DV templates: %v", vols.dvTemplates))
 	}
 
 	return fmt.Errorf(s.String())
@@ -112,29 +103,9 @@ func ValidateVolumes(vmi *virtv1.VirtualMachineInstance, vm *virtv1.VirtualMachi
 	valid := true
 	disks := storagetypes.GetDisksByName(&vmi.Spec)
 	filesystems := storagetypes.GetFilesystemsFromVolumes(vmi)
-	dvTemplates := make(map[string]bool)
-	for _, t := range vm.Spec.DataVolumeTemplates {
-		dvTemplates[t.Name] = true
-	}
 	for _, v := range vm.Spec.Template.Spec.Volumes {
 		_, ok := updatedVols[v.Name]
 		if !ok {
-			continue
-		}
-
-		// Datavolumes should be transformed into PVCs
-		if v.VolumeSource.DataVolume != nil {
-			invalidVols.dvs = append(invalidVols.dvs, v.Name)
-			valid = false
-			continue
-		}
-
-		// Datavolume templates
-		claimName := storagetypes.PVCNameFromVirtVolume(&v)
-		// The reference to the DV template needs to be removed
-		if _, ok := dvTemplates[claimName]; ok {
-			invalidVols.dvTemplates = append(invalidVols.dvTemplates, v.Name)
-			valid = false
 			continue
 		}
 

@@ -2992,9 +2992,9 @@ func validLiveUpdateVolumes(oldVMSpec *virtv1.VirtualMachineSpec, vm *virtv1.Vir
 		// The volume has been freshly added
 		case !okOld:
 			return false
-		// if the update strategy is migration the PVC could have
+		// if the update strategy is migration the PVC/DV could have
 		// changed
-		case v.VolumeSource.PersistentVolumeClaim != nil &&
+		case (v.VolumeSource.PersistentVolumeClaim != nil || v.VolumeSource.DataVolume != nil) &&
 			vm.Spec.UpdateVolumesStrategy != nil &&
 			*vm.Spec.UpdateVolumesStrategy == virtv1.UpdateVolumesStrategyMigration:
 			delete(oldVols, v.Name)
@@ -3048,6 +3048,29 @@ func validLiveUpdateDisks(oldVMSpec *virtv1.VirtualMachineSpec, vm *virtv1.Virtu
 	return true
 }
 
+func validLiveUpdateDataVolumeTemplates(oldVMSpec *virtv1.VirtualMachineSpec, vm *virtv1.VirtualMachine) bool {
+	oldDvTemplates := storagetypes.GetDataVolumeTemplateByName(oldVMSpec)
+	dvTemplates := storagetypes.GetDataVolumeTemplateByName(&vm.Spec)
+	// Evaluate if any data volume template has changed or has been added
+	for _, newDvTemplate := range dvTemplates {
+		oldDvTemplate, okOld := oldDvTemplates[newDvTemplate.Name]
+		if okOld {
+			// the dv template hasn't been removed
+			delete(oldDvTemplates, newDvTemplate.Name)
+			if equality.Semantic.DeepEqual(*oldDvTemplate, newDvTemplate) {
+				// No changes
+				delete(dvTemplates, newDvTemplate.Name)
+			}
+		}
+	}
+	// The datavolume templates can only be updated with the migration volume update strategy
+	if (len(dvTemplates) == 0 && len(oldDvTemplates) == 0) ||
+		(vm.Spec.UpdateVolumesStrategy != nil && *vm.Spec.UpdateVolumesStrategy == virtv1.UpdateVolumesStrategyMigration) {
+		return true
+	}
+	return false
+}
+
 // addRestartRequiredIfNeeded adds the restartRequired condition to the VM if any non-live-updatable field was changed
 func (c *VMController) addRestartRequiredIfNeeded(lastSeenVMSpec *virtv1.VirtualMachineSpec, vm *virtv1.VirtualMachine) (*virtv1.VirtualMachine, bool) {
 	if lastSeenVMSpec == nil {
@@ -3062,6 +3085,9 @@ func (c *VMController) addRestartRequiredIfNeeded(lastSeenVMSpec *virtv1.Virtual
 		}
 		if validLiveUpdateDisks(lastSeenVMSpec, vm) {
 			lastSeenVMSpec.Template.Spec.Domain.Devices.Disks = vm.Spec.Template.Spec.Domain.Devices.Disks
+		}
+		if validLiveUpdateDataVolumeTemplates(lastSeenVMSpec, vm) {
+			lastSeenVMSpec.DataVolumeTemplates = vm.Spec.DataVolumeTemplates
 		}
 		if lastSeenVMSpec.Template.Spec.Domain.CPU != nil && vm.Spec.Template.Spec.Domain.CPU != nil {
 			lastSeenVMSpec.Template.Spec.Domain.CPU.Sockets = vm.Spec.Template.Spec.Domain.CPU.Sockets

@@ -6429,6 +6429,21 @@ var _ = Describe("VirtualMachine", func() {
 				Name: name,
 			}
 		}
+		createDVTemplate := func(name, size string) v1.DataVolumeTemplateSpec {
+			return v1.DataVolumeTemplateSpec{
+				ObjectMeta: metav1.ObjectMeta{Name: name},
+				Spec: cdiv1.DataVolumeSpec{
+					PVC: &k8sv1.PersistentVolumeClaimSpec{
+						Resources: k8sv1.ResourceRequirements{
+							Requests: k8sv1.ResourceList{
+								"storage": resource.MustParse(size),
+							},
+						},
+					},
+				},
+			}
+
+		}
 		DescribeTable("should be validated for volume updates", func(oldVols, newVols []v1.Volume, expectValid bool) {
 			oldVm, _ := DefaultVirtualMachine(true)
 			newVm := oldVm.DeepCopy()
@@ -6478,6 +6493,30 @@ var _ = Describe("VirtualMachine", func() {
 				createPVCVol("vol2", "test2", false)}, []v1.Disk{createDisk("vol2")}, []v1.Disk{createDisk("vol1"), createDisk("vol2")}, true),
 			Entry("for a removed hotpluggable pvc", []v1.Volume{createPVCVol("vol1", "test1", true)}, []v1.Volume{},
 				[]v1.Disk{createDisk("vol1")}, []v1.Disk{}, true),
+		)
+		DescribeTable("should be validate for datavolume template updates with the migration update volume strategy", func(oldDvTemplates, newDvTemplatess []v1.DataVolumeTemplateSpec,
+			withUpdateVolStrategy, expectValid bool) {
+			oldVm, _ := DefaultVirtualMachine(true)
+			newVm := oldVm.DeepCopy()
+			oldVm.Spec.DataVolumeTemplates = oldDvTemplates
+			newVm.Spec.DataVolumeTemplates = newDvTemplatess
+			if withUpdateVolStrategy {
+				newVm.Spec.UpdateVolumesStrategy = virtpointer.P(v1.UpdateVolumesStrategyMigration)
+			}
+			Expect(validLiveUpdateDataVolumeTemplates(&oldVm.Spec, newVm)).To(Equal(expectValid))
+		},
+			Entry("with the migration update volume strategy and without changes", []v1.DataVolumeTemplateSpec{
+				{ObjectMeta: metav1.ObjectMeta{Name: "dv1"}}}, []v1.DataVolumeTemplateSpec{{ObjectMeta: metav1.ObjectMeta{Name: "dv1"}}}, true, true),
+			Entry("without the migration update volume strategy and without changes", []v1.DataVolumeTemplateSpec{
+				{ObjectMeta: metav1.ObjectMeta{Name: "dv1"}}}, []v1.DataVolumeTemplateSpec{{ObjectMeta: metav1.ObjectMeta{Name: "dv1"}}}, false, true),
+			Entry("with the migration update volume strategy and for a replaced datavolume template", []v1.DataVolumeTemplateSpec{
+				{ObjectMeta: metav1.ObjectMeta{Name: "dv1"}}}, []v1.DataVolumeTemplateSpec{{ObjectMeta: metav1.ObjectMeta{Name: "dv2"}}}, true, true),
+			Entry("without the migration update volume strategy and for a replaced datavolume template", []v1.DataVolumeTemplateSpec{
+				{ObjectMeta: metav1.ObjectMeta{Name: "dv1"}}}, []v1.DataVolumeTemplateSpec{{ObjectMeta: metav1.ObjectMeta{Name: "dv2"}}}, false, false),
+			Entry("with the migration update volume strategy and with datavolume template change", []v1.DataVolumeTemplateSpec{createDVTemplate("dv1", "1Gi")},
+				[]v1.DataVolumeTemplateSpec{createDVTemplate("dv1", "2Gi")}, true, true),
+			Entry("without the migration update volume strategy and with datavolume template change", []v1.DataVolumeTemplateSpec{createDVTemplate("dv1", "1Gi")},
+				[]v1.DataVolumeTemplateSpec{createDVTemplate("dv1", "2Gi")}, false, false),
 		)
 	})
 })

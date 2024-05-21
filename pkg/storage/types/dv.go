@@ -322,3 +322,11 @@ func (d *DataVolumeConditionManager) HasConditionWithStatusAndReason(dv *cdiv1.D
 	c := d.GetCondition(dv, cond)
 	return c != nil && c.Status == status && c.Reason == reason
 }
+
+func GetDataVolumeTemplateByName(vmSpec *virtv1.VirtualMachineSpec) map[string]*virtv1.DataVolumeTemplateSpec {
+	dataVolumeTemplates := make(map[string]*virtv1.DataVolumeTemplateSpec)
+	for _, dvTemplate := range vmSpec.DataVolumeTemplates {
+		dataVolumeTemplates[dvTemplate.Name] = dvTemplate.DeepCopy()
+	}
+	return dataVolumeTemplates
+}
