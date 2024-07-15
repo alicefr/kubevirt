@@ -17651,6 +17651,10 @@
        "$ref": "#/definitions/v1.VirtualMachineStateChangeRequest"
       }
      },
+     "volumeMigration": {
+      "description": "VolumeMigration tracks the information related to the volume migration",
+      "$ref": "#/definitions/v1.VolumeMigration"
+     },
      "volumeRequests": {
       "description": "VolumeRequests indicates a list of volumes add or remove from the VMI template and hotplug on an active running VMI.",
       "type": "array",
@@ -17754,6 +17758,65 @@
      "sysprep": {
       "description": "Represents a Sysprep volume source.",
       "$ref": "#/definitions/v1.SysprepSource"
+     }
+    }
+   },
+   "v1.VolumeMigration": {
+    "type": "object",
+    "properties": {
+     "conditions": {
+      "description": "Succeeded indicates if the volume migration completed successfully",
+      "type": "array",
+      "items": {
+       "default": {},
+       "$ref": "#/definitions/v1.VolumeMigrationCondition"
+      }
+     },
+     "migratedVolumes": {
+      "description": "MigratedVolumes lists the source and destination volumes during the volume migration",
+      "type": "array",
+      "items": {
+       "default": {},
+       "$ref": "#/definitions/v1.StorageMigratedVolumeInfo"
+      },
+      "x-kubernetes-list-type": "atomic"
+     }
+    }
+   },
+   "v1.VolumeMigrationCondition": {
+    "type": "object",
+    "required": [
+     "type",
+     "status"
+    ],
+    "properties": {
+     "lastProbeTime": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "default": {}
+     },
+     "lastTransitionTime": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "default": {}
+     },
+     "message": {
+      "type": "string"
+     },
+     "reason": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string",
+      "default": ""
+     },
+     "type": {
+      "type": "string",
+      "default": ""
      }
     }
    },

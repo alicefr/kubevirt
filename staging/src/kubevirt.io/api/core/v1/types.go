@@ -1668,6 +1668,36 @@ type VirtualMachineStatus struct {
 	// RunStrategy tracks the last recorded RunStrategy used by the VM.
 	// This is needed to correctly process the next strategy (for now only the RerunOnFailure)
 	RunStrategy VirtualMachineRunStrategy `json:"runStrategy,omitempty" optional:"true"`
+
+	// VolumeMigration tracks the information related to the volume migration
+	VolumeMigration *VolumeMigration `json:"volumeMigration,omitempty" optional:"true"`
+}
+
+type VolumeMigrationConditionType string
+
+const (
+	VolumeMigrationConditionStarted   VolumeMigrationConditionType = "VolumeMigrationStarted"
+	VolumeMigrationConditionCompleted VolumeMigrationConditionType = "VolumeMigratinCompleted"
+)
+
+type VolumeMigrationCondition struct {
+	Type   VolumeMigrationConditionType `json:"type"`
+	Status k8sv1.ConditionStatus        `json:"status"`
+	// +nullable
+	LastProbeTime metav1.Time `json:"lastProbeTime,omitempty"`
+	// +nullable
+	LastTransitionTime metav1.Time `json:"lastTransitionTime,omitempty"`
+	Reason             string      `json:"reason,omitempty"`
+	Message            string      `json:"message,omitempty"`
+}
+
+type VolumeMigration struct {
+	// MigratedVolumes lists the source and destination volumes during the volume migration
+	// +listType=atomic
+	// +optional
+	MigratedVolumes []StorageMigratedVolumeInfo `json:"migratedVolumes,omitempty"`
+	// Succeeded indicates if the volume migration completed successfully
+	Conditions []VolumeMigrationCondition `json:"conditions,omitempty"`
 }
 
 type VolumeSnapshotStatus struct {

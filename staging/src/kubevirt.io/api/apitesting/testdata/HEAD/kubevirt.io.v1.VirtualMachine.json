@@ -1246,6 +1246,53 @@
     },
     "observedGeneration": -18,
     "desiredGeneration": -17,
-    "runStrategy": "runStrategyValue"
+    "runStrategy": "runStrategyValue",
+    "volumeMigration": {
+      "migratedVolumes": [
+        {
+          "volumeName": "volumeNameValue",
+          "sourcePVCInfo": {
+            "claimName": "claimNameValue",
+            "accessModes": [
+              "accessModesValue"
+            ],
+            "volumeMode": "volumeModeValue",
+            "capacity": {
+              "capacityKey": "0"
+            },
+            "requests": {
+              "requestsKey": "0"
+            },
+            "preallocated": true,
+            "filesystemOverhead": "filesystemOverheadValue"
+          },
+          "destinationPVCInfo": {
+            "claimName": "claimNameValue",
+            "accessModes": [
+              "accessModesValue"
+            ],
+            "volumeMode": "volumeModeValue",
+            "capacity": {
+              "capacityKey": "0"
+            },
+            "requests": {
+              "requestsKey": "0"
+            },
+            "preallocated": true,
+            "filesystemOverhead": "filesystemOverheadValue"
+          }
+        }
+      ],
+      "conditions": [
+        {
+          "type": "typeValue",
+          "status": "statusValue",
+          "lastProbeTime": "1987-01-01T01:01:01Z",
+          "lastTransitionTime": "1982-01-01T01:01:01Z",
+          "reason": "reasonValue",
+          "message": "messageValue"
+        }
+      ]
+    }
   }
 }
