@@ -1674,6 +1674,28 @@ type VirtualMachineStatus struct {
 	// RunStrategy tracks the last recorded RunStrategy used by the VM.
 	// This is needed to correctly process the next strategy (for now only the RerunOnFailure)
 	RunStrategy VirtualMachineRunStrategy `json:"runStrategy,omitempty" optional:"true"`
+
+	// VolumeMigrationState tracks the information related to the volume migration
+	VolumeMigrationState *VolumeMigrationState `json:"volumeMigrationState,omitempty" optional:"true"`
+}
+
+type VolumeMigrationState struct {
+	// MigratedVolumes lists the source and destination volumes during the volume migration
+	// +listType=atomic
+	// +optional
+	MigratedVolumes []StorageMigratedVolumeInfo `json:"migratedVolumes,omitempty"`
+	// The time the migration action began
+	// +nullable
+	StartTimestamp *metav1.Time `json:"startTimestamp,omitempty"`
+	// The time the migration action ended
+	// +nullable
+	EndTimestamp *metav1.Time `json:"endTimestamp,omitempty"`
+	// Indicates the migration completed
+	Completed bool `json:"completed,omitempty"`
+	// Indicates that the migration succeeded
+	Succeeded bool `json:"succeeded,omitempty"`
+	// Contains the reason why the migration failed
+	FailureReason string `json:"failureReason,omitempty"`
 }
 
 type VolumeSnapshotStatus struct {

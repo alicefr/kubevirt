@@ -804,6 +804,36 @@ status:
     data:
       dataKey: dataValue
     uid: uidValue
+  volumeMigrationState:
+    completed: true
+    endTimestamp: "1988-01-01T01:01:01Z"
+    failureReason: failureReasonValue
+    migratedVolumes:
+    - destinationPVCInfo:
+        accessModes:
+        - accessModesValue
+        capacity:
+          capacityKey: "0"
+        claimName: claimNameValue
+        filesystemOverhead: filesystemOverheadValue
+        preallocated: true
+        requests:
+          requestsKey: "0"
+        volumeMode: volumeModeValue
+      sourcePVCInfo:
+        accessModes:
+        - accessModesValue
+        capacity:
+          capacityKey: "0"
+        claimName: claimNameValue
+        filesystemOverhead: filesystemOverheadValue
+        preallocated: true
+        requests:
+          requestsKey: "0"
+        volumeMode: volumeModeValue
+      volumeName: volumeNameValue
+    startTimestamp: "1986-01-01T01:01:01Z"
+    succeeded: true
   volumeRequests:
   - addVolumeOptions:
       disk:
