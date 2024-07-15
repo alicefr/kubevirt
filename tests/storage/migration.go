@@ -34,7 +34,6 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/util/rand"
-
 	virtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
@@ -251,6 +250,40 @@ var _ = SIGDescribe("[Serial]Volumes update with migration", Serial, func() {
 			Expect(vm.Spec.Template.Spec.Volumes[replacedIndex].VolumeSource.DataVolume.Name).To(Equal(name))
 		}
 
+		checkVolumeMigrationOnVM := func(vm *virtv1.VirtualMachine, volName, src, dst string, succeeded bool) {
+			var msg string
+			Eventually(func() []virtv1.StorageMigratedVolumeInfo {
+				vm, err := virtClient.VirtualMachine(vm.Namespace).Get(context.Background(), vm.Name, metav1.GetOptions{})
+				Expect(err).ToNot(HaveOccurred())
+				if vm.Status.VolumeMigrationState == nil {
+					return nil
+				}
+				return vm.Status.VolumeMigrationState.MigratedVolumes
+			}).WithTimeout(120*time.Second).WithPolling(time.Second).Should(
+				ContainElement(virtv1.StorageMigratedVolumeInfo{
+					VolumeName: volName,
+					SourcePVCInfo: &virtv1.PersistentVolumeClaimInfo{
+						ClaimName:  src,
+						VolumeMode: pointer.P(k8sv1.PersistentVolumeFilesystem),
+					},
+					DestinationPVCInfo: &virtv1.PersistentVolumeClaimInfo{
+						ClaimName:  dst,
+						VolumeMode: pointer.P(k8sv1.PersistentVolumeFilesystem),
+					},
+				}), "The volumes migrated should be set",
+			)
+			Eventually(func() bool {
+				vm, err := virtClient.VirtualMachine(vm.Namespace).Get(context.Background(), vm.Name, metav1.GetOptions{})
+				Expect(err).ToNot(HaveOccurred())
+				return vm.Status.VolumeMigrationState.Completed
+			}).WithTimeout(120*time.Second).WithPolling(time.Second).Should(BeTrue(), msg)
+			vm, err := virtClient.VirtualMachine(vm.Namespace).Get(context.Background(), vm.Name, metav1.GetOptions{})
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vm.Status.VolumeMigrationState.StartTimestamp).NotTo(BeNil())
+			Expect(vm.Status.VolumeMigrationState.EndTimestamp).NotTo(BeNil())
+			Expect(vm.Status.VolumeMigrationState.Succeeded).To(Equal(succeeded))
+		}
+
 		BeforeEach(func() {
 			ns = testsuite.GetTestNamespace(nil)
 			destPVC = "dest-" + rand.String(5)
@@ -286,7 +319,8 @@ var _ = SIGDescribe("[Serial]Volumes update with migration", Serial, func() {
 
 		It("should migrate the source volume from a source DV to a destination DV", func() {
 			volName := "disk0"
-			vm := createVMWithDV(createDV(), volName)
+			dv := createDV()
+			vm := createVMWithDV(dv, volName)
 			destDV := createBlankDV()
 			By("Update volumes")
 			updateVMWithDV(vm.Name, volName, destDV.Name)
@@ -298,6 +332,7 @@ var _ = SIGDescribe("[Serial]Volumes update with migration", Serial, func() {
 				return claim == destDV.Name
 			}, 120*time.Second, time.Second).Should(BeTrue())
 			waitForMigrationToSucceed(vm.Name, ns)
+			checkVolumeMigrationOnVM(vm, volName, dv.Name, destDV.Name, true)
 		})
 
 		It("should migrate a PVC with a VM using a containerdisk", func() {
@@ -387,6 +422,23 @@ var _ = SIGDescribe("[Serial]Volumes update with migration", Serial, func() {
 			// increasing. Therefore, after 2 minutes we don't expect more then 6 mgration objects.
 			Expect(len(migList.Items)).Should(BeNumerically(">", 1))
 			Expect(len(migList.Items)).Should(BeNumerically("<", 56))
+		})
+
+		It("should mark the volume migration as failed if the VM is shutdown", func() {
+			volName := "volume"
+			dv := createDV()
+			vm := createVMWithDV(dv, volName)
+			// Create dest PVC
+			createUnschedulablePVC(destPVC, ns, size)
+			By("Update volumes")
+			updateVMWithPVC(vm.Name, volName, destPVC)
+			waitMigrationToExist(vm.Name, ns)
+			waitVMIToHaveVolumeChangeCond(vm.Name, ns)
+			By("Stopping the VM during the volume migration")
+			stopOptions := &virtv1.StopOptions{GracePeriod: pointer.P(int64(0))}
+			err := virtClient.VirtualMachine(vm.Namespace).Stop(context.Background(), vm.Name, stopOptions)
+			Expect(err).ToNot(HaveOccurred())
+			checkVolumeMigrationOnVM(vm, volName, dv.Name, destPVC, false)
 		})
 	})
 })
