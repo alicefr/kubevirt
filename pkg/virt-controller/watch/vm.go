@@ -976,12 +976,21 @@ func (c *VMController) handleVolumeUpdateRequest(vm *virtv1.VirtualMachine, vmi 
 			setRestartRequired(vm, err.Error())
 			return nil
 		}
-
+		migVols, err := volumemig.GenerateMigratedVolumes(c.pvcStore, vmi, vm)
+		if err != nil {
+			log.Log.Object(vm).Errorf("failed to generate the migrating volumes for vm: %v", err)
+			return err
+		}
+		if vm.Status.VolumeMigration == nil {
+			vm.Status.VolumeMigration = &virtv1.VolumeMigration{}
+		}
+		vm.Status.VolumeMigration.MigratedVolumes = migVols
+		vm.Status.VolumeMigration.Succeeded = false
 		if err := volumemig.PatchVMIStatusWithMigratedVolumes(c.clientset, c.pvcStore, vmi, vm); err != nil {
 			log.Log.Object(vm).Errorf("failed to update migrating volumes for vmi:%v", err)
 			return err
 		}
-		log.Log.Object(vm).Infof("Updated migrating volumes in the status")
+		log.Log.Object(vm).Infof("Updated migrating volumes in the VMI status")
 		if _, err := volumemig.PatchVMIVolumes(c.clientset, vmi, vm); err != nil {
 			log.Log.Object(vm).Errorf("failed to update volumes for vmi:%v", err)
 			return err
@@ -2436,6 +2445,9 @@ func (c *VMController) updateStatus(vm, vmOrig *virtv1.VirtualMachine, vmi *virt
 	syncStartFailureStatus(vm, vmi)
 	syncConditions(vm, vmi, syncErr)
 	c.setPrintableStatus(vm, vmi)
+	if vmi != nil && vmi.Status.VolumeMigrationSucceeded != nil && vm.Status.VolumeMigration != nil {
+		vm.Status.VolumeMigration.Succeeded = *vmi.Status.VolumeMigrationSucceeded
+	}
 
 	// only update if necessary
 	if !equality.Semantic.DeepEqual(vm.Status, vmOrig.Status) {
