@@ -41,6 +41,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authv1 "k8s.io/api/authorization/v1"
 	k8score "k8s.io/api/core/v1"
+	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -60,6 +61,8 @@ import (
 	"kubevirt.io/client-go/kubecli"
 	"kubevirt.io/client-go/log"
 	cdiv1 "kubevirt.io/containerized-data-importer-api/pkg/apis/core/v1beta1"
+
+	"kubevirt.io/kubevirt/pkg/pointer"
 
 	"kubevirt.io/kubevirt/pkg/apimachinery/patch"
 	"kubevirt.io/kubevirt/pkg/controller"
@@ -972,7 +975,11 @@ func (c *VMController) handleVolumeUpdateRequest(vm *virtv1.VirtualMachine, vmi 
 			setRestartRequired(vm, err.Error())
 			return nil
 		}
-
+		migVols, err := volumemig.GenerateMigratedVolumes(c.pvcStore, vmi, vm)
+		if err != nil {
+			log.Log.Object(vm).Errorf("failed to generate the migrating volumes for vm: %v", err)
+			return err
+		}
 		if err := volumemig.PatchVMIStatusWithMigratedVolumes(c.clientset, c.pvcStore, vmi, vm); err != nil {
 			log.Log.Object(vm).Errorf("failed to update migrating volumes for vmi:%v", err)
 			return err
@@ -983,6 +990,13 @@ func (c *VMController) handleVolumeUpdateRequest(vm *virtv1.VirtualMachine, vmi 
 			return err
 		}
 		log.Log.Object(vm).Infof("Updated volumes for vmi")
+		if len(migVols) > 0 {
+			vm.Status.VolumeMigrationState = &virtv1.VolumeMigrationState{
+				MigratedVolumes: migVols,
+				StartTimestamp:  pointer.P(metav1.Now()),
+			}
+		}
+
 	default:
 		return fmt.Errorf("updateVolumes strategy not recognized: %s", *vm.Spec.UpdateVolumesStrategy)
 	}
@@ -1584,6 +1598,51 @@ func syncStartFailureStatus(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachin
 			RetryAfterTimestamp:  &retryAfter,
 			ConsecutiveFailCount: count,
 		}
+	}
+}
+
+func syncVolumeMigration(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) {
+	if vm.Status.VolumeMigrationState == nil {
+		return
+	}
+	vmCond := controller.NewVirtualMachineConditionManager()
+	vmiCond := controller.NewVirtualMachineInstanceConditionManager()
+	now := metav1.Now()
+	// Something went wrong with the VMI while the volume migration was in progress
+	if vmi == nil && vmCond.HasConditionWithStatus(vm, virtv1.VirtualMachineConditionType(virtv1.VirtualMachineInstanceVolumesChange), k8sv1.ConditionTrue) {
+		vm.Status.VolumeMigrationState.EndTimestamp = &now
+		vm.Status.VolumeMigrationState.Succeeded = false
+		vm.Status.VolumeMigrationState.FailureReason = "VMI disappeared"
+		vm.Status.VolumeMigrationState.Completed = true
+	}
+	if vmi == nil {
+		return
+	}
+	// Check if the volume update wasn't successful
+	cond := vmiCond.GetCondition(vmi, virtv1.VirtualMachineInstanceVolumesChange)
+	if cond != nil && cond.Status == k8sv1.ConditionFalse {
+		// The volume migration has been cancelled
+		if cond.Reason == virtv1.VirtualMachineInstanceReasonVolumesChangeCancellation {
+			vm.Status.VolumeMigrationState = nil
+		} else {
+			// The volume migration failed for some reasons
+			vm.Status.VolumeMigrationState.EndTimestamp = &now
+			vm.Status.VolumeMigrationState.Succeeded = false
+			msg := "Storage migration failed"
+			if cond.Message != "" {
+				msg = fmt.Sprintf("%s: %s", msg, cond.Message)
+			}
+			vm.Status.VolumeMigrationState.FailureReason = msg
+			vm.Status.VolumeMigrationState.Completed = true
+		}
+	}
+
+	// The volume migration is set as succeeded when the VM still has the volumes change condition while the VMI doesn't have it anymore.
+	if vmCond.HasCondition(vm, virtv1.VirtualMachineConditionType(virtv1.VirtualMachineInstanceVolumesChange)) &&
+		!vmiCond.HasCondition(vmi, virtv1.VirtualMachineInstanceVolumesChange) {
+		vm.Status.VolumeMigrationState.EndTimestamp = &now
+		vm.Status.VolumeMigrationState.Succeeded = true
+		vm.Status.VolumeMigrationState.Completed = true
 	}
 }
 
@@ -2440,6 +2499,9 @@ func (c *VMController) updateStatus(vm, vmOrig *virtv1.VirtualMachine, vmi *virt
 	}
 
 	syncStartFailureStatus(vm, vmi)
+	// On a successful migration, the volume change condition is removed and we need to detect the removal before the synchronization of the VMI
+	// condition to the VM
+	syncVolumeMigration(vm, vmi)
 	syncConditions(vm, vmi, syncErr)
 	c.setPrintableStatus(vm, vmi)
 
