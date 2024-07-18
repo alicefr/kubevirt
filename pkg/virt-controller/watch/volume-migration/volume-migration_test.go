@@ -28,6 +28,7 @@ import (
 	"github.com/golang/mock/gomock"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "github.com/onsi/gomega/gstruct"
 
 	k8sv1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -35,11 +36,14 @@ import (
 	"k8s.io/client-go/tools/cache"
 
 	v1 "kubevirt.io/api/core/v1"
+	virtv1 "kubevirt.io/api/core/v1"
 	"kubevirt.io/client-go/kubecli"
 
 	"kubevirt.io/kubevirt/pkg/controller"
+	"kubevirt.io/kubevirt/pkg/pointer"
 
 	"kubevirt.io/kubevirt/pkg/libvmi"
+	libvmistatus "kubevirt.io/kubevirt/pkg/libvmi/status"
 	virtpointer "kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/testutils"
 	volumemigration "kubevirt.io/kubevirt/pkg/virt-controller/watch/volume-migration"
@@ -207,6 +211,7 @@ var _ = Describe("Volume Migration", func() {
 			ctrl         *gomock.Controller
 			virtClient   *kubecli.MockKubevirtClient
 			vmiInterface *kubecli.MockVirtualMachineInstanceInterface
+			vmInterface  *kubecli.MockVirtualMachineInterface
 			pvcStore     cache.Store
 		)
 		const ns = k8sv1.NamespaceDefault
@@ -219,7 +224,9 @@ var _ = Describe("Volume Migration", func() {
 			ctrl = gomock.NewController(GinkgoT())
 			virtClient = kubecli.NewMockKubevirtClient(ctrl)
 			vmiInterface = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
+			vmInterface = kubecli.NewMockVirtualMachineInterface(ctrl)
 			virtClient.EXPECT().VirtualMachineInstance(ns).Return(vmiInterface).AnyTimes()
+			virtClient.EXPECT().VirtualMachine(ns).Return(vmInterface).AnyTimes()
 			pvcInformer, _ := testutils.NewFakeInformerFor(&k8sv1.PersistentVolumeClaim{})
 			pvcStore = pvcInformer.GetStore()
 		})
@@ -276,12 +283,25 @@ var _ = Describe("Volume Migration", func() {
 		DescribeTable("should update the migrated volumes in the vmi", func(vmiVols, vmVols []string, expectedMigVols map[string]migVolumes) {
 			shouldAddPVCsIntoTheStore(vmiVols, vmVols)
 			vmi := libvmi.New(append(addVMIOptionsForVolumes(vmiVols), libvmi.WithNamespace(ns))...)
-			vm := libvmi.NewVirtualMachine(libvmi.New(append(addVMIOptionsForVolumes(vmVols), libvmi.WithNamespace(ns))...))
+			//vm := libvmi.NewVirtualMachine(libvmi.New(append(addVMIOptionsForVolumes(vmVols), libvmi.WithNamespace(ns))...))
+			var migVols []virtv1.StorageMigratedVolumeInfo
 			if len(expectedMigVols) > 0 {
 				shouldPatchVMI(vmi, expectedMigVols)
 			}
-
-			Expect(volumemigration.PatchVMIStatusWithMigratedVolumes(virtClient, pvcStore, vmi, vm)).ToNot(HaveOccurred())
+			for k, v := range expectedMigVols {
+				migVols = append(migVols, v1.StorageMigratedVolumeInfo{
+					VolumeName: k,
+					SourcePVCInfo: &v1.PersistentVolumeClaimInfo{
+						ClaimName:  v.src,
+						VolumeMode: pointer.P(k8sv1.PersistentVolumeFilesystem),
+					},
+					DestinationPVCInfo: &v1.PersistentVolumeClaimInfo{
+						ClaimName:  v.dst,
+						VolumeMode: pointer.P(k8sv1.PersistentVolumeFilesystem),
+					},
+				})
+			}
+			Expect(volumemigration.PatchVMIStatusWithMigratedVolumes(virtClient, vmi, migVols)).ToNot(HaveOccurred())
 		},
 			Entry("with an update of a volume", []string{"src0"}, []string{"dst0"},
 				map[string]migVolumes{generateDiskNameFromIndex(0): migVolumes{src: "src0", dst: "dst0"}}),
@@ -291,6 +311,173 @@ var _ = Describe("Volume Migration", func() {
 			Entry("without any update", []string{"vol0"}, []string{"vol0"}, map[string]migVolumes{}),
 		)
 
+	})
+
+	Context("ValidateVolumesUpdateMigration", func() {
+		DescribeTable("should validate if the VMI can be migrate due to a volume update", func(vmi *v1.VirtualMachineInstance, exectedRes error) {
+			var err error
+			if vmi == nil {
+				err = volumemigration.ValidateVolumesUpdateMigration(vmi, nil, nil)
+			} else {
+				err = volumemigration.ValidateVolumesUpdateMigration(vmi, nil, vmi.Status.MigratedVolumes)
+			}
+			if exectedRes == nil {
+				Expect(err).ToNot(HaveOccurred())
+			} else {
+				Expect(err).To(Equal(exectedRes))
+			}
+		},
+			Entry("with nil VMI", nil, fmt.Errorf("VMI is empty")),
+			Entry("with valid migrated volumes", libvmi.New(libvmistatus.WithStatus(
+				v1.VirtualMachineInstanceStatus{
+					MigratedVolumes: []v1.StorageMigratedVolumeInfo{
+						{
+							VolumeName:         "disk0",
+							SourcePVCInfo:      &v1.PersistentVolumeClaimInfo{ClaimName: "src"},
+							DestinationPVCInfo: &v1.PersistentVolumeClaimInfo{ClaimName: "dst"},
+						},
+					},
+					Conditions: []v1.VirtualMachineInstanceCondition{
+						v1.VirtualMachineInstanceCondition{
+							Type:   v1.VirtualMachineInstanceIsMigratable,
+							Status: k8sv1.ConditionFalse,
+							Reason: v1.VirtualMachineInstanceReasonDisksNotMigratable,
+						},
+					},
+				})), nil),
+			Entry("with valid migrated volumes but unmigratable VMI", libvmi.New(libvmistatus.WithStatus(
+				v1.VirtualMachineInstanceStatus{
+					MigratedVolumes: []v1.StorageMigratedVolumeInfo{
+						{
+							VolumeName:         "disk0",
+							SourcePVCInfo:      &v1.PersistentVolumeClaimInfo{ClaimName: "src"},
+							DestinationPVCInfo: &v1.PersistentVolumeClaimInfo{ClaimName: "dst"},
+						},
+					},
+					Conditions: []v1.VirtualMachineInstanceCondition{
+						v1.VirtualMachineInstanceCondition{
+							Type:    v1.VirtualMachineInstanceIsStorageLiveMigratable,
+							Status:  k8sv1.ConditionFalse,
+							Reason:  v1.VirtualMachineInstanceReasonNotMigratable,
+							Message: "non migratable test condition",
+						},
+					},
+				})), fmt.Errorf("cannot migrate the volumes as the VMI isn't migratable: non migratable test condition")),
+			Entry("with valid migrated volumes but with an additional RWO volume", libvmi.New(libvmistatus.WithStatus(
+				v1.VirtualMachineInstanceStatus{
+					MigratedVolumes: []v1.StorageMigratedVolumeInfo{
+						{
+							VolumeName:         "disk0",
+							SourcePVCInfo:      &v1.PersistentVolumeClaimInfo{ClaimName: "src"},
+							DestinationPVCInfo: &v1.PersistentVolumeClaimInfo{ClaimName: "dst"},
+						},
+					},
+					Conditions: []v1.VirtualMachineInstanceCondition{
+						v1.VirtualMachineInstanceCondition{
+							Type:   v1.VirtualMachineInstanceIsMigratable,
+							Status: k8sv1.ConditionFalse,
+							Reason: v1.VirtualMachineInstanceReasonDisksNotMigratable,
+						},
+					},
+					VolumeStatus: []v1.VolumeStatus{
+						{
+							Name: "disk0",
+							PersistentVolumeClaimInfo: &v1.PersistentVolumeClaimInfo{
+								ClaimName:   "src",
+								AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
+							},
+						},
+						{
+							Name: "disk1",
+							PersistentVolumeClaimInfo: &v1.PersistentVolumeClaimInfo{
+								ClaimName:   "src",
+								AccessModes: []k8sv1.PersistentVolumeAccessMode{k8sv1.ReadWriteOnce},
+							},
+						},
+					},
+				})), fmt.Errorf("cannot migrate the VM. The volume disk1 is RWO and not included in the migration volumes")),
+		)
+	})
+
+	Context("PatchVMIVolumes", func() {
+		var (
+			ctrl         *gomock.Controller
+			virtClient   *kubecli.MockKubevirtClient
+			vmiInterface *kubecli.MockVirtualMachineInstanceInterface
+		)
+		const ns = k8sv1.NamespaceDefault
+		BeforeEach(func() {
+			ctrl = gomock.NewController(GinkgoT())
+			virtClient = kubecli.NewMockKubevirtClient(ctrl)
+			vmiInterface = kubecli.NewMockVirtualMachineInstanceInterface(ctrl)
+			virtClient.EXPECT().VirtualMachineInstance(gomock.Any()).Return(vmiInterface).AnyTimes()
+		})
+		shouldPatchVMI := func(vmi *v1.VirtualMachineInstance, volName, dst string) {
+			vmiInterface.EXPECT().Patch(context.Background(), vmi.Name, types.JSONPatchType, gomock.Any(), metav1.PatchOptions{}).
+				Do(func(ctx context.Context, name, patchType, patch, opts interface{}, subs ...interface{}) {
+					originalVMIBytes, err := json.Marshal(vmi)
+					Expect(err).ToNot(HaveOccurred())
+					patchBytes := patch.([]byte)
+
+					patchJSON, err := jsonpatch.DecodePatch(patchBytes)
+					Expect(err).ToNot(HaveOccurred())
+					newVMIBytes, err := patchJSON.Apply(originalVMIBytes)
+					Expect(err).ToNot(HaveOccurred())
+
+					var updatedVMI *v1.VirtualMachineInstance
+					err = json.Unmarshal(newVMIBytes, &updatedVMI)
+					Expect(err).ToNot(HaveOccurred())
+					Expect(updatedVMI.Spec.Volumes).To(ContainElement(MatchFields(IgnoreExtras,
+						Fields{
+							"Name": Equal(volName),
+							"VolumeSource": MatchFields(IgnoreExtras,
+								Fields{
+									"PersistentVolumeClaim": PointTo(MatchFields(IgnoreExtras,
+										Fields{
+											"PersistentVolumeClaimVolumeSource": MatchFields(IgnoreExtras,
+												Fields{
+													"ClaimName": Equal(dst),
+												}),
+										}),
+									),
+								}),
+						}),
+					))
+				})
+		}
+
+		It("should patch the VMI volumes", func() {
+			const volName = "disk0"
+			const dst = "vol1"
+			vmi := libvmi.New(libvmi.WithPersistentVolumeClaim(volName, "vol0"),
+				libvmistatus.WithStatus(libvmistatus.New(libvmistatus.WithMigratedVolume(v1.StorageMigratedVolumeInfo{VolumeName: volName}))))
+			vm := libvmi.NewVirtualMachine(libvmi.New(libvmi.WithPersistentVolumeClaim(volName, dst)))
+			shouldPatchVMI(vmi, volName, dst)
+			_, err := volumemigration.PatchVMIVolumes(virtClient, vmi, vm)
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		DescribeTable("should not patch the VMI volumes", func(vmi *v1.VirtualMachineInstance, vm *v1.VirtualMachine) {
+			vmiRes, err := volumemigration.PatchVMIVolumes(virtClient, vmi, vm)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(vmiRes).To(Equal(vmi))
+		},
+			Entry("without the migrated volumes set", libvmi.New(libvmi.WithPersistentVolumeClaim("disk0", "vol0")),
+				libvmi.NewVirtualMachine(libvmi.New(libvmi.WithPersistentVolumeClaim("disk0", "vol0")))),
+			Entry("without any updates with a VM using a PVC", libvmi.New(libvmi.WithPersistentVolumeClaim("disk0", "vol0"),
+				libvmistatus.WithStatus(libvmistatus.New(libvmistatus.WithMigratedVolume(v1.StorageMigratedVolumeInfo{VolumeName: "vol0"})))),
+				libvmi.NewVirtualMachine(libvmi.New(libvmi.WithPersistentVolumeClaim("disk0", "vol0"))),
+			),
+			// The image pull policy for the container disks is set by the mutating webhook on the VMI spec but not on the VM.
+			// This entry test simulates the scenario when the pull policy isn't set on the VM and the default is applied only
+			// on the VMI spec.
+			Entry("without any updates with a VM using a PVC and a containerdisk", libvmi.New(libvmi.WithPersistentVolumeClaim("disk0", "vol0"),
+				libvmistatus.WithStatus(libvmistatus.New(libvmistatus.WithMigratedVolume(v1.StorageMigratedVolumeInfo{VolumeName: "vol0"}))),
+				withContainerDisk("vol1", virtpointer.P(k8sv1.PullIfNotPresent))),
+				libvmi.NewVirtualMachine(libvmi.New(libvmi.WithPersistentVolumeClaim("disk0", "vol0"),
+					withContainerDisk("vol1", nil))),
+			),
+		)
 	})
 })
 
@@ -358,4 +545,24 @@ func addVMIOptionsForVolumes(vols []string) []libvmi.Option {
 		ops = append(ops, libvmi.WithPersistentVolumeClaim(generateDiskNameFromIndex(i), v))
 	}
 	return ops
+}
+
+func withContainerDisk(volName string, pullPolicy *k8sv1.PullPolicy) libvmi.Option {
+	return func(vmi *v1.VirtualMachineInstance) {
+		var policy k8sv1.PullPolicy
+		if pullPolicy == nil {
+			policy = ""
+		} else {
+			policy = *pullPolicy
+		}
+		vmi.Spec.Volumes = append(vmi.Spec.Volumes, v1.Volume{
+			Name: volName,
+			VolumeSource: v1.VolumeSource{
+				ContainerDisk: &v1.ContainerDiskSource{
+					Image:           "image",
+					ImagePullPolicy: policy,
+				},
+			},
+		})
+	}
 }
