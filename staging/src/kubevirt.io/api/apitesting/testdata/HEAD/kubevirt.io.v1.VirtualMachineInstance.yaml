@@ -697,6 +697,7 @@ status:
   topologyHints:
     tscFrequency: -12
   virtualMachineRevisionName: virtualMachineRevisionNameValue
+  volumeMigrationSucceeded: true
   volumeStatus:
   - containerDiskVolume:
       checksum: 4294967288

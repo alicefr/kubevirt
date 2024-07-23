@@ -13764,6 +13764,8 @@ var CRDsValidation map[string]string = map[string]string{
             VirtualMachineRevisionName is used to get the vm revision of the vmi when doing
             an online vm snapshot
           type: string
+        volumeMigrationSucceeded:
+          type: boolean
         volumeStatus:
           description: VolumeStatus contains the statuses of all the volumes
           items:

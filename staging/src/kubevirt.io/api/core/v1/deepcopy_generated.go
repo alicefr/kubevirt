@@ -5597,6 +5597,11 @@ func (in *VirtualMachineInstanceStatus) DeepCopyInto(out *VirtualMachineInstance
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}
 	}
+	if in.VolumeMigrationSucceeded != nil {
+		in, out := &in.VolumeMigrationSucceeded, &out.VolumeMigrationSucceeded
+		*out = new(bool)
+		**out = **in
+	}
 	return
 }
 

@@ -1061,6 +1061,7 @@
           "filesystemOverhead": "filesystemOverheadValue"
         }
       }
-    ]
+    ],
+    "volumeMigrationSucceeded": true
   }
 }

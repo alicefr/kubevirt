@@ -298,7 +298,8 @@ type VirtualMachineInstanceStatus struct {
 	// MigratedVolumes lists the source and destination volumes during the volume migration
 	// +listType=atomic
 	// +optional
-	MigratedVolumes []StorageMigratedVolumeInfo `json:"migratedVolumes,omitempty"`
+	MigratedVolumes          []StorageMigratedVolumeInfo `json:"migratedVolumes,omitempty"`
+	VolumeMigrationSucceeded *bool                       `json:"volumeMigrationSucceeded,omitempty"`
 }
 
 // StorageMigratedVolumeInfo tracks the information about the source and destination volumes during the volume migration
