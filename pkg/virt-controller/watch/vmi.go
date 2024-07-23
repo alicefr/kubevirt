@@ -27,6 +27,7 @@ import (
 	"strings"
 	"time"
 
+	"kubevirt.io/kubevirt/pkg/pointer"
 	"kubevirt.io/kubevirt/pkg/virt-controller/network"
 
 	"kubevirt.io/kubevirt/pkg/virt-controller/watch/topology"
@@ -2309,6 +2310,7 @@ func (c *VMIController) syncVolumesUpdate(vmi *virtv1.VirtualMachineInstance) {
 		Message:            "migrate volumes",
 	}
 	vmiConditions.UpdateCondition(vmi, &condition)
+	vmi.Status.VolumeMigrationSucceeded = pointer.P(false)
 }
 
 func (c *VMIController) aggregateDataVolumesConditions(vmiCopy *virtv1.VirtualMachineInstance, dvs []*cdiv1.DataVolume) {
