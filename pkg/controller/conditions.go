@@ -382,3 +382,59 @@ func (d *PodConditionManager) ConditionsEqual(pod1, pod2 *k8sv1.Pod) bool {
 
 	return true
 }
+
+type VolumeMigrationConditionManager struct {
+}
+
+func NewVolumeMigrationConditionManager() *VolumeMigrationConditionManager {
+	return &VolumeMigrationConditionManager{}
+}
+
+func (d *VolumeMigrationConditionManager) GetCondition(volMig *v1.VolumeMigration, cond v1.VolumeMigrationConditionType) *v1.VolumeMigrationCondition {
+	if volMig == nil {
+		return nil
+	}
+	for _, c := range volMig.Conditions {
+		if c.Type == cond {
+			return &c
+		}
+	}
+	return nil
+}
+
+func (d *VolumeMigrationConditionManager) HasCondition(volMig *v1.VolumeMigration, cond v1.VolumeMigrationConditionType) bool {
+	return d.GetCondition(volMig, cond) != nil
+}
+
+func (d *VolumeMigrationConditionManager) RemoveCondition(volMig *v1.VolumeMigration, cond v1.VolumeMigrationConditionType) {
+	var conds []v1.VolumeMigrationCondition
+	for _, c := range volMig.Conditions {
+		if c.Type == cond {
+			continue
+		}
+		conds = append(conds, c)
+	}
+	volMig.Conditions = conds
+}
+
+// UpdateCondition updates the given VolumeMigrationCondition, unless it is already set with the same status and reason.
+func (d *VolumeMigrationConditionManager) UpdateCondition(volMig *v1.VolumeMigration, cond *v1.VolumeMigrationCondition) {
+	for i, c := range volMig.Conditions {
+		if c.Type != cond.Type {
+			continue
+		}
+
+		if c.Status != cond.Status || c.Reason != cond.Reason {
+			volMig.Conditions[i] = *cond
+		}
+
+		return
+	}
+
+	volMig.Conditions = append(volMig.Conditions, *cond)
+}
+
+func (d *VolumeMigrationConditionManager) HasConditionWithStatus(volMig *v1.VolumeMigration, cond v1.VolumeMigrationConditionType, status k8sv1.ConditionStatus) bool {
+	c := d.GetCondition(volMig, cond)
+	return c != nil && c.Status == status
+}
