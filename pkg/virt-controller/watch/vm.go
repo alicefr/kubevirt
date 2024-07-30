@@ -41,6 +41,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	authv1 "k8s.io/api/authorization/v1"
 	k8score "k8s.io/api/core/v1"
+	k8sv1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	apiErrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -985,7 +986,6 @@ func (c *VMController) handleVolumeUpdateRequest(vm *virtv1.VirtualMachine, vmi 
 			vm.Status.VolumeMigration = &virtv1.VolumeMigration{}
 		}
 		vm.Status.VolumeMigration.MigratedVolumes = migVols
-		vm.Status.VolumeMigration.Succeeded = false
 		if err := volumemig.PatchVMIStatusWithMigratedVolumes(c.clientset, c.pvcStore, vmi, vm); err != nil {
 			log.Log.Object(vm).Errorf("failed to update migrating volumes for vmi:%v", err)
 			return err
@@ -1588,6 +1588,57 @@ func syncStartFailureStatus(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachin
 			ConsecutiveFailCount: count,
 		}
 	}
+}
+
+func syncVolumeMigration(vm *virtv1.VirtualMachine, vmi *virtv1.VirtualMachineInstance) {
+	vmCond := controller.NewVirtualMachineConditionManager()
+	vmiCond := controller.NewVirtualMachineInstanceConditionManager()
+	volMigCond := controller.NewVolumeMigrationConditionManager()
+	now := metav1.Now()
+	if vm.Status.VolumeMigration == nil {
+		vm.Status.VolumeMigration = &virtv1.VolumeMigration{}
+	}
+	// First time we set the started condition on the vm and the volume migration has already been set on the VMI
+	if vmiCond.HasConditionWithStatus(vmi, virtv1.VirtualMachineInstanceVolumesChange, k8sv1.ConditionTrue) &&
+		!volMigCond.HasCondition(vm.Status.VolumeMigration, virtv1.VolumeMigrationConditionStarted) {
+		volMigCond.UpdateCondition(vm.Status.VolumeMigration, &virtv1.VolumeMigrationCondition{
+			Type:               virtv1.VolumeMigrationConditionStarted,
+			Status:             k8sv1.ConditionTrue,
+			LastTransitionTime: now,
+			Reason:             "Started migration",
+		})
+	}
+	// Something went wrong with the VMI while the volume migration was in progress
+	if vmi == nil && vmCond.HasConditionWithStatus(vm, virtv1.VirtualMachineConditionType(virtv1.VirtualMachineInstanceVolumesChange), k8sv1.ConditionTrue) {
+		volMigCond.UpdateCondition(vm.Status.VolumeMigration, &virtv1.VolumeMigrationCondition{
+			Type:               virtv1.VolumeMigrationConditionCompleted,
+			Status:             k8sv1.ConditionFalse,
+			LastTransitionTime: now,
+			Reason:             "Something failed during the migration",
+		})
+
+	}
+	if vmiCond.HasConditionWithStatus(vmi, virtv1.VirtualMachineInstanceVolumesChange, k8sv1.ConditionFalse) {
+		cond := vmiCond.GetCondition(vmi, virtv1.VirtualMachineInstanceVolumesChange)
+		volMigCond.UpdateCondition(vm.Status.VolumeMigration, &virtv1.VolumeMigrationCondition{
+			Type:               virtv1.VolumeMigrationConditionStarted,
+			Status:             k8sv1.ConditionTrue,
+			LastTransitionTime: now,
+			Reason:             "Migration failed",
+			Message:            cond.Message,
+		})
+	}
+	if vmi != nil && vmi.Status.VolumeMigrationSucceeded != nil && vm.Status.VolumeMigration != nil {
+		now := metav1.Now()
+		volMigCond.UpdateCondition(vm.Status.VolumeMigration, &virtv1.VolumeMigrationCondition{
+			Type:               virtv1.VolumeMigrationConditionCompleted,
+			Status:             k8sv1.ConditionTrue,
+			LastProbeTime:      now,
+			LastTransitionTime: now,
+			Reason:             "Successfully completed the volume migration",
+		})
+	}
+
 }
 
 // here is stop
@@ -2444,10 +2495,8 @@ func (c *VMController) updateStatus(vm, vmOrig *virtv1.VirtualMachine, vmi *virt
 
 	syncStartFailureStatus(vm, vmi)
 	syncConditions(vm, vmi, syncErr)
+	syncVolumeMigration(vm, vmi)
 	c.setPrintableStatus(vm, vmi)
-	if vmi != nil && vmi.Status.VolumeMigrationSucceeded != nil && vm.Status.VolumeMigration != nil {
-		vm.Status.VolumeMigration.Succeeded = *vmi.Status.VolumeMigrationSucceeded
-	}
 
 	// only update if necessary
 	if !equality.Semantic.DeepEqual(vm.Status, vmOrig.Status) {
