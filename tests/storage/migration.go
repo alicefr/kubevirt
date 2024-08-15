@@ -440,6 +440,24 @@ var _ = SIGDescribe("[Serial]Volumes update with migration", Serial, func() {
 			Expect(err).ToNot(HaveOccurred())
 			checkVolumeMigrationOnVM(vm, volName, dv.Name, destPVC, false)
 		})
+
+		It("should cancel the migration should clear the volume migration information on the VM", func() {
+			volName := "volume"
+			dv := createDV()
+			vm := createVMWithDV(dv, volName)
+			createUnschedulablePVC(destPVC, ns, size)
+			By("Update volumes")
+			updateVMWithPVC(vm.Name, volName, destPVC)
+			waitMigrationToExist(vm.Name, ns)
+			waitVMIToHaveVolumeChangeCond(vm.Name, ns)
+			By("Cancel the volume migration")
+			updateVMWithPVC(vm.Name, volName, dv.Name)
+			Eventually(func() *virtv1.VolumeMigrationState {
+				vm, err := virtClient.VirtualMachine(vm.Namespace).Get(context.Background(), vm.Name, metav1.GetOptions{})
+				Expect(err).ToNot(HaveOccurred())
+				return vm.Status.VolumeMigrationState
+			}).WithTimeout(120 * time.Second).WithPolling(time.Second).Should(BeNil())
+		})
 	})
 })
 
