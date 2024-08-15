@@ -21,7 +21,6 @@ package apply
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -411,19 +410,8 @@ var _ = Describe("Apply Apps", func() {
 					Expect(ok).To(BeTrue())
 					patched = true
 
-					patches, err := patch.UnmarshalPatch(a.GetPatch())
-					Expect(err).ToNot(HaveOccurred())
-
 					var dsSpec *appsv1.DaemonSetSpec
-					for _, v := range patches {
-						if v.Path == "/spec" && v.Op == "replace" {
-							dsSpec = &appsv1.DaemonSetSpec{}
-							template, err := json.Marshal(v.Value)
-							Expect(err).ToNot(HaveOccurred())
-							json.Unmarshal(template, dsSpec)
-						}
-					}
-
+					Expect(patch.UnmarshalPatch(a.GetPatch(), "/spec", patch.PatchReplaceOp, &dsSpec)).ToNot(HaveOccurred)
 					Expect(dsSpec).ToNot(BeNil())
 
 					command := dsSpec.Template.Spec.Containers[0].Command
@@ -489,18 +477,9 @@ var _ = Describe("Apply Apps", func() {
 					Expect(ok).To(BeTrue())
 					patched = true
 
-					patches := []patch.PatchOperation{}
-					json.Unmarshal(a.GetPatch(), &patches)
-
 					var annotations map[string]string
-					for _, v := range patches {
-						if v.Path == "/metadata/annotations" {
-							template, err := json.Marshal(v.Value)
-							Expect(err).ToNot(HaveOccurred())
-							json.Unmarshal(template, &annotations)
-						}
-					}
-
+					err = patch.UnmarshalPatchV2(a.GetPatch(), "/metadata/annotations", &annotations)
+					Expect(err).ToNot(HaveOccurred())
 					patchedDs := &appsv1.DaemonSet{
 						ObjectMeta: v12.ObjectMeta{
 							Annotations: annotations,
@@ -549,23 +528,10 @@ var _ = Describe("Apply Apps", func() {
 						Expect(ok).To(BeTrue())
 						patched = true
 
-						patches := []patch.PatchOperation{}
-						json.Unmarshal(a.GetPatch(), &patches)
-
 						var annotations map[string]string
 						var dsSpec appsv1.DaemonSetSpec
-						for _, v := range patches {
-							if v.Path == "/spec" {
-								template, err := json.Marshal(v.Value)
-								Expect(err).ToNot(HaveOccurred())
-								json.Unmarshal(template, &dsSpec)
-							}
-							if v.Path == "/metadata/annotations" {
-								template, err := json.Marshal(v.Value)
-								Expect(err).ToNot(HaveOccurred())
-								json.Unmarshal(template, &annotations)
-							}
-						}
+						Expect(patch.UnmarshalPatchV2(a.GetPatch(), "/spec", &dsSpec)).ToNot(HaveOccurred())
+						Expect(patch.UnmarshalPatchV2(a.GetPatch(), "/metadata/annotations", &annotations)).ToNot(HaveOccurred())
 
 						patchedDs := &appsv1.DaemonSet{
 							ObjectMeta: v12.ObjectMeta{

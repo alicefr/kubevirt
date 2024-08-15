@@ -26,16 +26,19 @@ import (
 )
 
 type PatchOperation struct {
-	Op    string      `json:"op"`
+	Op    PatchOp     `json:"op"`
 	Path  string      `json:"path"`
 	Value interface{} `json:"value"`
 }
 
+type PatchOp string
+
 const (
-	PatchReplaceOp = "replace"
-	PatchTestOp    = "test"
-	PatchAddOp     = "add"
-	PatchRemoveOp  = "remove"
+	PatchReplaceOp PatchOp = "replace"
+	PatchTestOp    PatchOp = "test"
+	PatchAddOp     PatchOp = "add"
+	PatchRemoveOp  PatchOp = "remove"
+	PatchAnyOp     PatchOp = "any"
 )
 
 func (p *PatchOperation) MarshalJSON() ([]byte, error) {
@@ -44,15 +47,15 @@ func (p *PatchOperation) MarshalJSON() ([]byte, error) {
 	// and it needs to be parsed differently.
 	case PatchRemoveOp:
 		return json.Marshal(&struct {
-			Op   string `json:"op"`
-			Path string `json:"path"`
+			Op   PatchOp `json:"op"`
+			Path string  `json:"path"`
 		}{
 			Op:   p.Op,
 			Path: p.Path,
 		})
 	case PatchTestOp, PatchReplaceOp, PatchAddOp:
 		return json.Marshal(&struct {
-			Op    string      `json:"op"`
+			Op    PatchOp     `json:"op"`
 			Path  string      `json:"path"`
 			Value interface{} `json:"value"`
 		}{
@@ -87,7 +90,7 @@ func (p *PatchSet) AddOption(opts ...PatchOption) {
 	}
 }
 
-func (p *PatchSet) addOp(op, path string, value interface{}) {
+func (p *PatchSet) addOp(op PatchOp, path string, value interface{}) {
 	p.patches = append(p.patches, PatchOperation{
 		Op:    op,
 		Path:  path,
@@ -155,11 +158,25 @@ func GenerateTestReplacePatch(path string, oldValue, newValue interface{}) ([]by
 	)
 }
 
-func UnmarshalPatch(patch []byte) ([]PatchOperation, error) {
-	var p []PatchOperation
-	err := json.Unmarshal(patch, &p)
+func UnmarshalPatch(patch []byte, path string, operation *PatchOp, obj any) error {
+	var ops []PatchOperation
+	if err := json.Unmarshal(patch, &ops); err != nil {
+		return err
+	}
+	for _, op := range ops {
+		if operation != nil && op.Op != *operation {
+			continue
+		}
+		if op.Path == path {
+			template, err := json.Marshal(op.Value)
+			if err != nil {
+				return err
+			}
+			return json.Unmarshal(template, obj)
+		}
+	}
 
-	return p, err
+	return fmt.Errorf("the path %s doesn't exist in the patch", path)
 }
 
 func EscapeJSONPointer(ptr string) string {
