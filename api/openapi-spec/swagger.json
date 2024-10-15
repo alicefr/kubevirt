@@ -13424,6 +13424,20 @@
      }
     }
    },
+   "v1.DiskIOThreads": {
+    "type": "object",
+    "properties": {
+     "count": {
+      "description": "Count specifies how many iothreads are allocated for the dedicated policy.",
+      "type": "integer",
+      "format": "int64"
+     },
+     "policy": {
+      "description": "Policy controls how the iothreads are allocated:\n   shared, auto, dedicated",
+      "type": "string"
+     }
+    }
+   },
    "v1.DiskTarget": {
     "type": "object",
     "properties": {
@@ -13505,6 +13519,10 @@
      "firmware": {
       "description": "Firmware.",
       "$ref": "#/definitions/v1.Firmware"
+     },
+     "ioThreads": {
+      "description": "IOThreads specifies the IOThreads options.",
+      "$ref": "#/definitions/v1.DiskIOThreads"
      },
      "ioThreadsPolicy": {
       "description": "Controls whether or not disks will share IOThreads. Omitting IOThreadsPolicy disables use of IOThreads. One of: shared, auto",

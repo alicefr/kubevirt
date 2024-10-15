@@ -370,6 +370,7 @@ func GetOpenAPIDefinitions(ref common.ReferenceCallback) map[string]common.OpenA
 		"kubevirt.io/api/core/v1.DisableSerialConsoleLog":                                            schema_kubevirtio_api_core_v1_DisableSerialConsoleLog(ref),
 		"kubevirt.io/api/core/v1.Disk":                                                               schema_kubevirtio_api_core_v1_Disk(ref),
 		"kubevirt.io/api/core/v1.DiskDevice":                                                         schema_kubevirtio_api_core_v1_DiskDevice(ref),
+		"kubevirt.io/api/core/v1.DiskIOThreads":                                                      schema_kubevirtio_api_core_v1_DiskIOThreads(ref),
 		"kubevirt.io/api/core/v1.DiskTarget":                                                         schema_kubevirtio_api_core_v1_DiskTarget(ref),
 		"kubevirt.io/api/core/v1.DiskVerification":                                                   schema_kubevirtio_api_core_v1_DiskVerification(ref),
 		"kubevirt.io/api/core/v1.DomainMemoryDumpInfo":                                               schema_kubevirtio_api_core_v1_DomainMemoryDumpInfo(ref),
@@ -18904,6 +18905,32 @@ func schema_kubevirtio_api_core_v1_DiskDevice(ref common.ReferenceCallback) comm
 	}
 }
 
+func schema_kubevirtio_api_core_v1_DiskIOThreads(ref common.ReferenceCallback) common.OpenAPIDefinition {
+	return common.OpenAPIDefinition{
+		Schema: spec.Schema{
+			SchemaProps: spec.SchemaProps{
+				Type: []string{"object"},
+				Properties: map[string]spec.Schema{
+					"policy": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Policy controls how the iothreads are allocated:\n   shared, auto, dedicated",
+							Type:        []string{"string"},
+							Format:      "",
+						},
+					},
+					"count": {
+						SchemaProps: spec.SchemaProps{
+							Description: "Count specifies how many iothreads are allocated for the dedicated policy.",
+							Type:        []string{"integer"},
+							Format:      "int64",
+						},
+					},
+				},
+			},
+		},
+	}
+}
+
 func schema_kubevirtio_api_core_v1_DiskTarget(ref common.ReferenceCallback) common.OpenAPIDefinition {
 	return common.OpenAPIDefinition{
 		Schema: spec.Schema{
@@ -19062,6 +19089,12 @@ func schema_kubevirtio_api_core_v1_DomainSpec(ref common.ReferenceCallback) comm
 							Format:      "",
 						},
 					},
+					"ioThreads": {
+						SchemaProps: spec.SchemaProps{
+							Description: "IOThreads specifies the IOThreads options.",
+							Ref:         ref("kubevirt.io/api/core/v1.DiskIOThreads"),
+						},
+					},
 					"chassis": {
 						SchemaProps: spec.SchemaProps{
 							Description: "Chassis specifies the chassis info passed to the domain.",
@@ -19079,7 +19112,7 @@ func schema_kubevirtio_api_core_v1_DomainSpec(ref common.ReferenceCallback) comm
 			},
 		},
 		Dependencies: []string{
-			"kubevirt.io/api/core/v1.CPU", "kubevirt.io/api/core/v1.Chassis", "kubevirt.io/api/core/v1.Clock", "kubevirt.io/api/core/v1.Devices", "kubevirt.io/api/core/v1.Features", "kubevirt.io/api/core/v1.Firmware", "kubevirt.io/api/core/v1.LaunchSecurity", "kubevirt.io/api/core/v1.Machine", "kubevirt.io/api/core/v1.Memory", "kubevirt.io/api/core/v1.ResourceRequirements"},
+			"kubevirt.io/api/core/v1.CPU", "kubevirt.io/api/core/v1.Chassis", "kubevirt.io/api/core/v1.Clock", "kubevirt.io/api/core/v1.Devices", "kubevirt.io/api/core/v1.DiskIOThreads", "kubevirt.io/api/core/v1.Features", "kubevirt.io/api/core/v1.Firmware", "kubevirt.io/api/core/v1.LaunchSecurity", "kubevirt.io/api/core/v1.Machine", "kubevirt.io/api/core/v1.Memory", "kubevirt.io/api/core/v1.ResourceRequirements"},
 	}
 }
 
