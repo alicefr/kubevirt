@@ -203,6 +203,7 @@ type DomainSpec struct {
 	// One of: shared, auto
 	// +optional
 	IOThreadsPolicy *IOThreadsPolicy `json:"ioThreadsPolicy,omitempty"`
+	IOThreads       *DiskIOThreads   `json:"ioThreads,omitempty"`
 	// Chassis specifies the chassis info passed to the domain.
 	// +optional
 	Chassis *Chassis `json:"chassis,omitempty"`
@@ -1585,4 +1586,8 @@ type CPUTopology struct {
 	// Threads specifies the number of threads inside the vmi.
 	// Must be a value greater or equal 1.
 	Threads uint32 `json:"threads,omitempty"`
+}
+
+type DiskIOThreads struct {
+	Count uint32 `json:"count,omitempty"`
 }
