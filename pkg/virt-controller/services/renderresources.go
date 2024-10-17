@@ -53,6 +53,10 @@ func doesVMIRequireDedicatedCPU(vmi *v1.VirtualMachineInstance) bool {
 	return vmi.IsCPUDedicated()
 }
 
+func doesVMIRequireCPUForIOThreads(vmi *v1.VirtualMachineInstance) bool {
+	return vmi.Spec.Domain.IOThreads != nil && vmi.Spec.Domain.IOThreads.Count > 0
+}
+
 func NewResourceRenderer(vmLimits k8sv1.ResourceList, vmRequests k8sv1.ResourceList, options ...ResourceRendererOption) *ResourceRenderer {
 	limits := map[k8sv1.ResourceName]resource.Quantity{}
 	requests := map[k8sv1.ResourceName]resource.Quantity{}
@@ -109,6 +113,15 @@ func WithEphemeralStorageRequest() ResourceRendererOption {
 	}
 }
 
+func addToCPU(resource map[k8sv1.ResourceName]resource.Quantity, q resource.Quantity) {
+	if r, ok := resource[k8sv1.ResourceCPU]; ok {
+		r.Add(q)
+		resource[k8sv1.ResourceCPU] = r
+	} else {
+		resource[k8sv1.ResourceCPU] = q
+	}
+}
+
 func WithoutDedicatedCPU(cpu *v1.CPU, cpuAllocationRatio int, withCPULimits bool) ResourceRendererOption {
 	return func(renderer *ResourceRenderer) {
 		vcpus := calcVCPUs(cpu)
@@ -125,6 +138,17 @@ func WithoutDedicatedCPU(cpu *v1.CPU, cpuAllocationRatio int, withCPULimits bool
 				renderer.calculatedLimits[k8sv1.ResourceCPU] = resource.MustParse(strconv.FormatInt(vcpus, 10))
 			}
 		}
+	}
+}
+
+func WithIOThreads(iothreads *v1.DiskIOThreads) ResourceRendererOption {
+	return func(renderer *ResourceRenderer) {
+		if iothreads == nil || iothreads.Count == 0 {
+			return
+		}
+		q := resource.MustParse(strconv.FormatInt(int64(iothreads.Count), 10))
+		addToCPU(renderer.calculatedRequests, q)
+		addToCPU(renderer.calculatedLimits, q)
 	}
 }
 

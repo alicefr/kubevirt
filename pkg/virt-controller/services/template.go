@@ -1451,6 +1451,7 @@ func (t *templateService) VMIResourcePredicates(vmi *v1.VirtualMachineInstance, 
 			NewVMIResourceRule(util.IsHostDevVMI, WithHostDevices(vmi.Spec.Domain.Devices.HostDevices)),
 			NewVMIResourceRule(util.IsSEVVMI, WithSEV()),
 			NewVMIResourceRule(reservation.HasVMIPersistentReservation, WithPersistentReservation()),
+			NewVMIResourceRule(doesVMIRequireCPUForIOThreads, WithIOThreads(vmi.Spec.Domain.IOThreads)),
 		},
 	}
 }
