@@ -53,6 +53,10 @@ func doesVMIRequireDedicatedCPU(vmi *v1.VirtualMachineInstance) bool {
 	return vmi.IsCPUDedicated()
 }
 
+func doesVMIRequireCPUForIOThreads(vmi *v1.VirtualMachineInstance) bool {
+	return vmi.Spec.Domain.IOThreads != nil && vmi.Spec.Domain.IOThreads.Count > 0
+}
+
 func NewResourceRenderer(vmLimits k8sv1.ResourceList, vmRequests k8sv1.ResourceList, options ...ResourceRendererOption) *ResourceRenderer {
 	limits := map[k8sv1.ResourceName]resource.Quantity{}
 	requests := map[k8sv1.ResourceName]resource.Quantity{}
@@ -109,6 +113,17 @@ func WithEphemeralStorageRequest() ResourceRendererOption {
 	}
 }
 
+func addToCPU(resource map[k8sv1.ResourceName]resource.Quantity, q resource.Quantity) {
+	if r, ok := resource[k8sv1.ResourceCPU]; ok {
+		fmt.Printf("addToCPU original value:%v\n", r)
+		r.Add(q)
+		resource[k8sv1.ResourceCPU] = r
+	} else {
+		resource[k8sv1.ResourceCPU] = q
+	}
+	fmt.Printf("addToCPU result:%v\n", resource[k8sv1.ResourceCPU])
+}
+
 func WithoutDedicatedCPU(cpu *v1.CPU, cpuAllocationRatio int, withCPULimits bool) ResourceRendererOption {
 	return func(renderer *ResourceRenderer) {
 		vcpus := calcVCPUs(cpu)
@@ -125,6 +140,19 @@ func WithoutDedicatedCPU(cpu *v1.CPU, cpuAllocationRatio int, withCPULimits bool
 				renderer.calculatedLimits[k8sv1.ResourceCPU] = resource.MustParse(strconv.FormatInt(vcpus, 10))
 			}
 		}
+	}
+}
+
+func WithIOThreads(iothreads *v1.DiskIOThreads) ResourceRendererOption {
+	return func(renderer *ResourceRenderer) {
+		if iothreads == nil || iothreads.Count == 0 {
+			return
+		}
+		q := resource.NewQuantity(int64(iothreads.Count), resource.BinarySI)
+		addToCPU(renderer.vmLimits, *q)
+		addToCPU(renderer.vmRequests, *q)
+		renderer.calculatedLimits[k8sv1.ResourceCPU] = renderer.vmLimits[k8sv1.ResourceCPU]
+		renderer.calculatedRequests[k8sv1.ResourceCPU] = renderer.vmRequests[k8sv1.ResourceCPU]
 	}
 }
 
@@ -198,8 +226,9 @@ func WithAutoMemoryLimits(namespace string, namespaceStore cache.Store) Resource
 func WithCPUPinning(cpu *v1.CPU, annotations map[string]string) ResourceRendererOption {
 	return func(renderer *ResourceRenderer) {
 		vcpus := hardware.GetNumberOfVCPUs(cpu)
+		fmt.Printf("XXX vcpus %v\n", vcpus)
 		if vcpus != 0 {
-			renderer.calculatedLimits[k8sv1.ResourceCPU] = *resource.NewQuantity(vcpus, resource.BinarySI)
+			addToCPU(renderer.calculatedLimits, *resource.NewQuantity(vcpus, resource.BinarySI))
 		} else {
 			if cpuLimit, ok := renderer.vmLimits[k8sv1.ResourceCPU]; ok {
 				renderer.vmRequests[k8sv1.ResourceCPU] = cpuLimit
@@ -218,17 +247,17 @@ func WithCPUPinning(cpu *v1.CPU, annotations map[string]string) ResourceRenderer
 				limits.Value()%2 == 0 {
 				emulatorThreadCPUs = resource.NewQuantity(2, resource.BinarySI)
 			}
-
+			fmt.Printf("XXX add thread %v to limits %v\n", *emulatorThreadCPUs, renderer.vmLimits)
 			limits.Add(*emulatorThreadCPUs)
 			renderer.vmLimits[k8sv1.ResourceCPU] = limits
 
-			if cpuRequest, ok := renderer.vmRequests[k8sv1.ResourceCPU]; ok {
-				cpuRequest.Add(*emulatorThreadCPUs)
-				renderer.vmRequests[k8sv1.ResourceCPU] = cpuRequest
+			if _, ok := renderer.vmRequests[k8sv1.ResourceCPU]; ok {
+				addToCPU(renderer.vmRequests, *emulatorThreadCPUs)
 			}
 		}
 
 		renderer.vmLimits[k8sv1.ResourceMemory] = *renderer.vmRequests.Memory()
+		fmt.Printf("XXX limit %v\n", renderer.vmLimits[k8sv1.ResourceCPU])
 	}
 }
 
@@ -533,7 +562,7 @@ func sidecarResources(vmi *v1.VirtualMachineInstance, config *virtconfig.Cluster
 	if vmi.IsCPUDedicated() || vmi.WantsToHaveQOSGuaranteed() {
 		resources.Limits[k8sv1.ResourceCPU] = resource.MustParse("200m")
 		if limCpu := config.GetSupportContainerLimit(v1.SideCar, k8sv1.ResourceCPU); limCpu != nil {
-			resources.Limits[k8sv1.ResourceCPU] = *limCpu
+			addToCPU(resources.Limits, *limCpu)
 		}
 		resources.Limits[k8sv1.ResourceMemory] = resource.MustParse("64M")
 		if limMem := config.GetSupportContainerLimit(v1.SideCar, k8sv1.ResourceMemory); limMem != nil {
@@ -543,7 +572,7 @@ func sidecarResources(vmi *v1.VirtualMachineInstance, config *virtconfig.Cluster
 		resources.Requests[k8sv1.ResourceMemory] = resources.Limits[k8sv1.ResourceMemory]
 	} else {
 		if limCpu := config.GetSupportContainerLimit(v1.SideCar, k8sv1.ResourceCPU); limCpu != nil {
-			resources.Limits[k8sv1.ResourceCPU] = *limCpu
+			addToCPU(resources.Limits, *limCpu)
 		}
 		if limMem := config.GetSupportContainerLimit(v1.SideCar, k8sv1.ResourceMemory); limMem != nil {
 			resources.Limits[k8sv1.ResourceMemory] = *limMem

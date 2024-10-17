@@ -237,6 +237,29 @@ var _ = Describe("Resource pod spec renderer", func() {
 				Entry("EmulatorThreadCompleteToEvenParity mode is enabled, request and limits set by the user, odd amount of cores is requested", map[string]string{v1.EmulatorThreadCompleteToEvenParity: ""}, true, uint32(5), "1000m"),
 				Entry("EmulatorThreadCompleteToEvenParity mode is enabled, request and limits set by the user, even amount of cores is requested", map[string]string{v1.EmulatorThreadCompleteToEvenParity: ""}, true, uint32(6), "2000m"),
 			)
+
+			FIt("requires additional EmulatorThread CPUs overhead, and additional CPUs added to the limits and the IOThreads", func() {
+				cores := uint32(2)
+				iothreads := uint32(4)
+
+				rr = NewResourceRenderer(
+					nil, nil,
+					WithIOThreads(&v1.DiskIOThreads{Count: iothreads}),
+					WithCPUPinning(&v1.CPU{
+						Cores:                 cores,
+						IsolateEmulatorThread: true,
+						DedicatedCPUPlacement: true,
+					}, nil),
+				)
+				Expect(rr.Limits()).Should(HaveKeyWithValue(
+					kubev1.ResourceCPU,
+					*resource.NewQuantity(int64(cores)+int64(iothreads)+1, resource.BinarySI),
+				), "should have the limits")
+				Expect(rr.Requests()).Should(HaveKeyWithValue(
+					kubev1.ResourceCPU,
+					*resource.NewQuantity(int64(cores)+int64(iothreads)+1, resource.BinarySI),
+				), "should have the requests")
+			})
 		})
 	})
 
