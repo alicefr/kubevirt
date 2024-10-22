@@ -3986,6 +3986,85 @@ var _ = Describe("Validating VMICreate Admitter", func() {
 			Entry("no hyperv use", doNotUseExplicitHyperV, doNotUseHyperVPassthrough, true),
 		)
 	})
+	Context("should validate the VMIs with iothreads", func() {
+		var vmi *v1.VirtualMachineInstance
+		BeforeEach(func() {
+			vmi = newBaseVmi()
+		})
+		It("with valid options", func() {
+			vmi.Spec.Domain.CPU = &v1.CPU{
+				Cores:                 2,
+				DedicatedCPUPlacement: true,
+				IsolateEmulatorThread: true,
+			}
+			vmi.Spec.Domain.IOThreads = &v1.DiskIOThreads{
+				Policy: v1.IOThreadsPolicyDedicated,
+				Count:  pointer.P(uint32(4)),
+			}
+			causes := ValidateVirtualMachineInstanceSpec(k8sfield.NewPath("spec"), &vmi.Spec, config)
+			Expect(causes).To(BeEmpty())
+		})
+		It("with the ioThreadsPolicy set", func() {
+			vmi.Spec.Domain.IOThreads = &v1.DiskIOThreads{
+				Policy: v1.IOThreadsPolicyAuto,
+			}
+			vmi.Spec.Domain.IOThreadsPolicy = pointer.P(v1.IOThreadsPolicyAuto)
+			vmi.Spec.Domain.CPU = &v1.CPU{
+				Cores:                 2,
+				DedicatedCPUPlacement: true,
+				IsolateEmulatorThread: true,
+			}
+			causes := ValidateVirtualMachineInstanceSpec(k8sfield.NewPath("spec"), &vmi.Spec, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Field).To(Equal("spec.domain.ioThreadsPolicy"))
+			Expect(causes[0].Message).To(Equal("ioThreadsPolicy cannot be set together with the ioThreads option"))
+		})
+		It("with an empty policy", func() {
+			vmi.Spec.Domain.IOThreads = &v1.DiskIOThreads{}
+			causes := ValidateVirtualMachineInstanceSpec(k8sfield.NewPath("spec"), &vmi.Spec, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Field).To(Equal("spec.domain.ioThreads.policy"))
+			Expect(causes[0].Message).To(Equal("the policy cannot be empty"))
+		})
+		It("with an invalid policy", func() {
+			vmi.Spec.Domain.IOThreads = &v1.DiskIOThreads{
+				Policy: v1.IOThreadsPolicy("invalid"),
+			}
+			causes := ValidateVirtualMachineInstanceSpec(k8sfield.NewPath("spec"), &vmi.Spec, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Field).To(Equal("spec.domain.ioThreads.policy"))
+			Expect(causes[0].Message).To(Equal("unrecognized policy invalid"))
+		})
+		It("with dedicated policy and invalid number of IOthreads", func() {
+			vmi.Spec.Domain.IOThreads = &v1.DiskIOThreads{
+				Policy: v1.IOThreadsPolicyDedicated,
+				Count:  pointer.P(uint32(0)),
+			}
+			vmi.Spec.Domain.CPU = &v1.CPU{
+				Cores:                 2,
+				DedicatedCPUPlacement: true,
+				IsolateEmulatorThread: true,
+			}
+			causes := ValidateVirtualMachineInstanceSpec(k8sfield.NewPath("spec"), &vmi.Spec, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Field).To(Equal("spec.domain.ioThreads.count"))
+			Expect(causes[0].Message).To(Equal("the number of iothreads needs to be set and positive for the dedicated policy"))
+		})
+		It("with dedicated policy and empty number of IOthreads", func() {
+			vmi.Spec.Domain.IOThreads = &v1.DiskIOThreads{
+				Policy: v1.IOThreadsPolicyDedicated,
+			}
+			vmi.Spec.Domain.CPU = &v1.CPU{
+				Cores:                 2,
+				DedicatedCPUPlacement: true,
+				IsolateEmulatorThread: true,
+			}
+			causes := ValidateVirtualMachineInstanceSpec(k8sfield.NewPath("spec"), &vmi.Spec, config)
+			Expect(causes).To(HaveLen(1))
+			Expect(causes[0].Field).To(Equal("spec.domain.ioThreads.count"))
+			Expect(causes[0].Message).To(Equal("the number of iothreads needs to be set and positive for the dedicated policy"))
+		})
+	})
 })
 
 var _ = Describe("Function getNumberOfPodInterfaces()", func() {

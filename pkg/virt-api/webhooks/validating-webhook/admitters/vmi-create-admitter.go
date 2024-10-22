@@ -213,6 +213,7 @@ func ValidateVirtualMachineInstanceSpec(field *k8sfield.Path, spec *v1.VirtualMa
 	causes = append(causes, validatePersistentReservation(field, spec, config)...)
 	causes = append(causes, validatePersistentState(field, spec, config)...)
 	causes = append(causes, validateDownwardMetrics(field, spec, config)...)
+	causes = append(causes, validateIOThreads(field, spec)...)
 
 	return causes
 }
@@ -2321,5 +2322,52 @@ func validateCPUHotplug(field *k8sfield.Path, spec *v1.VirtualMachineInstanceSpe
 			})
 		}
 	}
+	return causes
+}
+
+func validateIOThreads(field *k8sfield.Path, spec *v1.VirtualMachineInstanceSpec) []metav1.StatusCause {
+	var causes []metav1.StatusCause
+
+	if spec.Domain.IOThreads == nil {
+		return nil
+	}
+	if spec.Domain.IOThreadsPolicy != nil {
+		causes = append(causes, metav1.StatusCause{
+			Type:    metav1.CauseTypeFieldValueInvalid,
+			Message: fmt.Sprintf("ioThreadsPolicy cannot be set together with the ioThreads option"),
+			Field:   field.Child("domain", "ioThreadsPolicy").String(),
+		})
+	}
+	if string(spec.Domain.IOThreads.Policy) == "" {
+		causes = append(causes, metav1.StatusCause{
+			Type:    metav1.CauseTypeFieldValueInvalid,
+			Message: "the policy cannot be empty",
+			Field:   field.Child("domain", "ioThreads", "policy").String(),
+		})
+		return causes
+	}
+
+	if spec.Domain.IOThreads.Policy != v1.IOThreadsPolicyShared &&
+		spec.Domain.IOThreads.Policy != v1.IOThreadsPolicyAuto &&
+		spec.Domain.IOThreads.Policy != v1.IOThreadsPolicyDedicated {
+		causes = append(causes, metav1.StatusCause{
+			Type:    metav1.CauseTypeFieldValueInvalid,
+			Message: fmt.Sprintf("unrecognized policy %s", string(spec.Domain.IOThreads.Policy)),
+			Field:   field.Child("domain", "ioThreads", "policy").String(),
+		})
+		return causes
+
+	}
+
+	if spec.Domain.IOThreads.Policy == v1.IOThreadsPolicyDedicated {
+		if spec.Domain.IOThreads.Count == nil || *spec.Domain.IOThreads.Count < 1 {
+			causes = append(causes, metav1.StatusCause{
+				Type:    metav1.CauseTypeFieldValueInvalid,
+				Message: "the number of iothreads needs to be set and positive for the dedicated policy",
+				Field:   field.Child("domain", "ioThreads", "count").String(),
+			})
+		}
+	}
+
 	return causes
 }
