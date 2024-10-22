@@ -1341,29 +1341,47 @@ func setIOThreads(vmi *v1.VirtualMachineInstance, domain *api.Domain, c *Convert
 	if !hasIOThreads(vmi) {
 		return
 	}
-	ioThreadCount, autoThreads := getIOThreadsCountType(vmi)
-	if ioThreadCount != 0 {
+	currentAutoThread := defaultIOThread
+	if vmi.Spec.Domain.IOThreads == nil {
+		ioThreadCount, autoThreads := getIOThreadsCountType(vmi)
+		if ioThreadCount != 0 {
+			if domain.Spec.IOThreads == nil {
+				domain.Spec.IOThreads = &api.IOThreads{}
+			}
+			domain.Spec.IOThreads.IOThreads = uint(ioThreadCount)
+		}
+
+		currentDedicatedThread := uint(autoThreads + 1)
+		for i, disk := range domain.Spec.Devices.Disks {
+			// Only disks with virtio bus support IOThreads
+			if disk.Target.Bus == v1.DiskBusVirtio {
+				if vmi.Spec.Domain.Devices.Disks[i].DedicatedIOThread != nil && *vmi.Spec.Domain.Devices.Disks[i].DedicatedIOThread {
+					domain.Spec.Devices.Disks[i].Driver.IOThread = pointer.P(currentDedicatedThread)
+					currentDedicatedThread += 1
+				} else {
+					domain.Spec.Devices.Disks[i].Driver.IOThread = pointer.P(currentAutoThread)
+					// increment the threadId to be used next but wrap around at the thread limit
+					// the odd math here is because thread ID's start at 1, not 0
+					currentAutoThread = (currentAutoThread % uint(autoThreads)) + 1
+				}
+			}
+		}
+	} else {
 		if domain.Spec.IOThreads == nil {
 			domain.Spec.IOThreads = &api.IOThreads{}
 		}
-		domain.Spec.IOThreads.IOThreads = uint(ioThreadCount)
-	}
-
-	currentAutoThread := defaultIOThread
-	currentDedicatedThread := uint(autoThreads + 1)
-	for i, disk := range domain.Spec.Devices.Disks {
-		// Only disks with virtio bus support IOThreads
-		if disk.Target.Bus == v1.DiskBusVirtio {
-			if vmi.Spec.Domain.Devices.Disks[i].DedicatedIOThread != nil && *vmi.Spec.Domain.Devices.Disks[i].DedicatedIOThread {
-				domain.Spec.Devices.Disks[i].Driver.IOThread = pointer.P(currentDedicatedThread)
-				currentDedicatedThread += 1
-			} else {
-				domain.Spec.Devices.Disks[i].Driver.IOThread = pointer.P(currentAutoThread)
-				// increment the threadId to be used next but wrap around at the thread limit
-				// the odd math here is because thread ID's start at 1, not 0
-				currentAutoThread = (currentAutoThread % uint(autoThreads)) + 1
+		domain.Spec.IOThreads.IOThreads = uint(vmi.Spec.Domain.IOThreads.Count)
+		iothreads := &api.DiskIOThreads{}
+		for id := 1; id <= int(vmi.Spec.Domain.IOThreads.Count); id++ {
+			iothreads.IOThread = append(iothreads.IOThread, api.DiskIOThread{Id: uint32(id)})
+		}
+		for i, disk := range domain.Spec.Devices.Disks {
+			// Only disks with virtio bus support IOThreads
+			if disk.Target.Bus == v1.DiskBusVirtio {
+				domain.Spec.Devices.Disks[i].Driver.IOThreads = iothreads
 			}
 		}
+
 	}
 
 	for i, controller := range domain.Spec.Devices.Controllers {
